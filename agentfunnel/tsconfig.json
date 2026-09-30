@@ -1,0 +1,14 @@
+{
+  "//": "Editor type-checking only. Node runs the .ts files directly (type stripping).",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["src", "test"]
+}

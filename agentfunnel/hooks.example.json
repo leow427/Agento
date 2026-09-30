@@ -1,0 +1,83 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/opt/node@22/bin/node --no-warnings /path/to/Agento/agentfunnel/src/hook.ts",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/opt/node@22/bin/node --no-warnings /path/to/Agento/agentfunnel/src/hook.ts",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/opt/node@22/bin/node --no-warnings /path/to/Agento/agentfunnel/src/hook.ts",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/opt/node@22/bin/node --no-warnings /path/to/Agento/agentfunnel/src/hook.ts",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/opt/node@22/bin/node --no-warnings /path/to/Agento/agentfunnel/src/hook.ts",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/opt/node@22/bin/node --no-warnings /path/to/Agento/agentfunnel/src/hook.ts",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/opt/node@22/bin/node --no-warnings /path/to/Agento/agentfunnel/src/hook.ts",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
