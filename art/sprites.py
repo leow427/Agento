@@ -77,8 +77,44 @@ SMOKE = {
     ),
 }
 
+# "!" floating above his head while a session needs you.
+BANG = ["C", "C", "C", ".", "C"]
+
+# Wi-Fi symbol (light grey) for the disconnected screen, crossed by a clay slash drawn on top.
+WIFI = [
+    ".....LLLLLLL.....",
+    "...LL.......LL...",
+    ".LL...........LL.",
+    "L.....LLLLL.....L",
+    "....LL.....LL....",
+    "...L.........L...",
+    ".......LLL.......",
+    "......L...L......",
+    ".................",
+    "........L........",
+    ".......LLL.......",
+    "........L........",
+]
+SLASH = [
+    "OO..........",
+    ".OO.........",
+    "..OO........",
+    "...OO.......",
+    "....OO......",
+    ".....OO.....",
+    "......OO....",
+    ".......OO...",
+    "........OO..",
+    ".........OO.",
+    "..........OO",
+    "...........O",
+]
+
 SPRITES = dict(
     {
+        "bang": BANG,
+        "wifi": WIFI,
+        "slash": SLASH,
         "body": BODY,
         "cursor": ["KKK"],
         "arm": ["OO", "OO", "OO", "DD"],

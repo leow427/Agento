@@ -93,6 +93,74 @@ def build(rig):
     }
 
 
-ANIMATIONS = build(FRONT_RIG)
+# Smoke centred on his body (not the laptop) for appearing and leaving.
+BODY_POOF_BIG = (4, 10)
+BODY_POOF_M = (7, 11)
+BODY_POOF_S = (11, 13)
+BODY_POOF_PUFFS = (3, 9)
+BANG_POS = (14, 2)
+
+
+def session_anims(rig):
+    """Extra front-view animations for the wearable: needs_you, poof in/out, gone, disconnected."""
+    x, y = rig["body_x"], rig["idle_y"]
+    cx, cy = rig["cursor"]
+
+    def body(dy, cursor, bang):
+        layers = [("body", x, y + dy)]
+        if cursor:
+            layers.append(("cursor", x + cx, y + dy + cy))
+        if bang:
+            layers.append(("bang", *BANG_POS))
+        return layers
+
+    return {
+        "needs_you": {
+            "steps": [
+                _step(300, body(0, True, True)),
+                _step(300, body(-1, True, True)),
+                _step(300, body(0, False, False)),
+                _step(300, body(-1, False, False)),
+            ],
+            "loop": True,
+            "hold_ms": 1200,
+            "next": "needs_you",
+        },
+        "poof_in": {
+            "steps": [
+                _step(70, [("poof_s", *BODY_POOF_S)]),
+                _step(70, [("poof_m", *BODY_POOF_M)]),
+                _step(90, body(0, True, False) + [("poof_big", *BODY_POOF_BIG)]),
+                _step(90, body(0, True, False) + [("poof_puffs", *BODY_POOF_PUFFS)]),
+            ],
+            "loop": False,
+            "next": "idle",
+        },
+        "poof_out": {
+            "steps": [
+                _step(90, body(0, True, False) + [("poof_puffs", *BODY_POOF_PUFFS)]),
+                _step(90, [("poof_big", *BODY_POOF_BIG)]),
+                _step(70, [("poof_m", *BODY_POOF_M)]),
+                _step(70, [("poof_s", *BODY_POOF_S)]),
+            ],
+            "loop": False,
+            "next": "gone",
+        },
+        "gone": {
+            "steps": [_step(1000, [])],
+            "loop": True,
+            "hold_ms": 1000,
+            "next": "gone",
+        },
+        "disconnected": {
+            "steps": [_step(1000, [("wifi", 6, 8), ("slash", 8, 8)])],
+            "loop": True,
+            "hold_ms": 1000,
+            "next": "disconnected",
+        },
+    }
+
+
+ANIMATIONS = dict(build(FRONT_RIG), **session_anims(FRONT_RIG))
 ANIMATIONS_3Q = build(THREEQ_RIG)
 START = "idle"
