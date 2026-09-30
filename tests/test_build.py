@@ -39,6 +39,6 @@ def test_header_export(tmp_path):
     for name in ("ANIM_IDLE", "ANIM_TO_CODING", "ANIM_CODING", "ANIM_TO_IDLE", "ANIM_COUNT"):
         assert name in h
     assert "constexpr uint8_t ANIM_START = ANIM_IDLE;" in h
-    assert "PALETTE565[8]" in h
+    assert "PALETTE565[9]" in h
     assert "0xDBAA" in h  # clay orange #D97757 as RGB565
     assert h.count("{") == h.count("}")

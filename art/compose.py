@@ -2,11 +2,12 @@ from .palette import GRID
 from .sprites import SPRITES
 
 
-def compose(layers):
+def compose(layers, sprites=None):
     """Draw (sprite_name, x, y) layers first-to-last onto a GRID x GRID canvas of palette chars."""
+    sprites = sprites or SPRITES
     grid = [["."] * GRID for _ in range(GRID)]
     for name, x, y in layers:
-        for dy, row in enumerate(SPRITES[name]):
+        for dy, row in enumerate(sprites[name]):
             for dx, ch in enumerate(row):
                 if ch == ".":
                     continue

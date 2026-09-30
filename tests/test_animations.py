@@ -2,15 +2,25 @@ import math
 
 import pytest
 
-from art.animations import ANIMATIONS, START
+from art.animations import ANIMATIONS, ANIMATIONS_3Q, START
 from art.compose import compose
 from art.palette import GRID
+from art.sprites import SPRITES, SPRITES_3Q
 
 MAX_RADIUS = 13.5  # cells from centre; one-cell margin inside the round bezel
 
 
-def all_frames(anim):
-    return [compose(step["layers"]) for step in ANIMATIONS[anim]["steps"]]
+VIEWS = {"front": (ANIMATIONS, SPRITES), "3q": (ANIMATIONS_3Q, SPRITES_3Q)}
+VIEW_IDS = list(VIEWS)
+
+
+def all_frames(anim, view="front"):
+    anims, sprites = VIEWS[view]
+    return [compose(step["layers"], sprites) for step in anims[anim]["steps"]]
+
+
+def visible(frame, ch):
+    return sum(row.count(ch) for row in frame)
 
 
 def test_compose_places_and_clips():
@@ -21,10 +31,12 @@ def test_compose_places_and_clips():
         compose([("cursor", GRID - 1, 0)])
 
 
-def test_flow_is_closed_and_well_formed():
-    assert START in ANIMATIONS
-    for name, anim in ANIMATIONS.items():
-        assert anim["next"] in ANIMATIONS, name
+@pytest.mark.parametrize("view", VIEW_IDS)
+def test_flow_is_closed_and_well_formed(view):
+    anims = VIEWS[view][0]
+    assert START in anims
+    for name, anim in anims.items():
+        assert anim["next"] in anims, name
         assert all(s["ms"] > 0 for s in anim["steps"]), name
         if anim["loop"]:
             assert anim["hold_ms"] > 0, name
@@ -32,49 +44,60 @@ def test_flow_is_closed_and_well_formed():
             assert "hold_ms" not in anim, name
 
 
-def test_timings_match_spec():
-    durations = {n: [s["ms"] for s in a["steps"]] for n, a in ANIMATIONS.items()}
+@pytest.mark.parametrize("view", VIEW_IDS)
+def test_timings_match_spec(view):
+    anims = VIEWS[view][0]
+    durations = {n: [s["ms"] for s in a["steps"]] for n, a in anims.items()}
     assert durations["idle"] == [400, 400, 400, 400]
     assert durations["to_coding"] == [70, 70, 90, 90]
     assert durations["coding"] == [80, 80, 80, 80]
     assert durations["to_idle"] == [90, 90, 70, 70]
-    assert ANIMATIONS["idle"]["hold_ms"] == 5000
-    assert ANIMATIONS["coding"]["hold_ms"] == 7000
+    assert anims["idle"]["hold_ms"] == 5000
+    assert anims["coding"]["hold_ms"] == 7000
 
 
-def test_every_frame_stays_inside_the_round_display():
-    for name in ANIMATIONS:
-        for i, frame in enumerate(all_frames(name)):
+@pytest.mark.parametrize("view", VIEW_IDS)
+def test_every_frame_stays_inside_the_round_display(view):
+    for name in VIEWS[view][0]:
+        for i, frame in enumerate(all_frames(name, view)):
             for y, row in enumerate(frame):
                 for x, ch in enumerate(row):
                     if ch == ".":
                         continue
                     dist = math.hypot(x + 0.5 - GRID / 2, y + 0.5 - GRID / 2)
-                    assert dist <= MAX_RADIUS, f"{name}[{i}] pixel ({x},{y}) is {dist:.1f} from centre"
+                    assert dist <= MAX_RADIUS, f"{view} {name}[{i}] pixel ({x},{y}) is {dist:.1f} from centre"
 
 
-def test_prompt_glyph_visible_in_every_coding_frame():
-    for i, frame in enumerate(all_frames("coding")):
-        ink = sum(row.count("K") for row in frame)
-        assert ink >= 5, f"coding[{i}] shows only {ink} ink pixels; the '>' is covered"
+@pytest.mark.parametrize("view", VIEW_IDS)
+def test_prompt_glyph_visible_in_every_coding_frame(view):
+    for i, frame in enumerate(all_frames("coding", view)):
+        ink = visible(frame, "K")
+        assert ink >= 5, f"{view} coding[{i}] shows only {ink} ink pixels; the '>' is covered"
 
 
-def test_laptop_appears_and_disappears_under_smoke():
-    def has_laptop(frame):
-        return any("S" in row for row in frame)
+@pytest.mark.parametrize("view", VIEW_IDS)
+def test_laptop_is_hidden_by_the_cloud_then_revealed(view):
+    full = visible(all_frames("coding", view)[0], "S")
+    to_coding = [visible(f, "S") for f in all_frames("to_coding", view)]
+    to_idle = [visible(f, "S") for f in all_frames("to_idle", view)]
+    assert to_coding[0] == to_coding[1] == 0
+    assert to_coding[2] <= 0.25 * full, "cloud should hide the laptop while it appears"
+    assert to_coding[3] >= 0.75 * full, "laptop should be revealed once the smoke breaks up"
+    assert to_idle[0] >= 0.75 * full
+    assert to_idle[1] <= 0.25 * full
+    assert to_idle[2] == to_idle[3] == 0
+    assert all(visible(f, "S") == 0 for f in all_frames("idle", view))
+    assert all(visible(f, "S") >= 0.75 * full for f in all_frames("coding", view))
 
-    to_coding = [has_laptop(f) for f in all_frames("to_coding")]
-    to_idle = [has_laptop(f) for f in all_frames("to_idle")]
-    assert to_coding == [False, False, True, True]
-    assert to_idle == [True, True, False, False]
-    assert not any(has_laptop(f) for f in all_frames("idle"))
-    assert all(has_laptop(f) for f in all_frames("coding"))
 
-
-def test_idle_bobs_and_blinks():
-    frames = all_frames("idle")
+@pytest.mark.parametrize("view", VIEW_IDS)
+def test_idle_bobs_and_blinks(view):
+    frames = all_frames("idle", view)
     assert len({tuple(f) for f in frames}) == 4  # all four idle frames differ
-    cursor_ink = [sum(r.count("K") for r in f) for f in frames]
-    assert cursor_ink == [8, 8, 5, 5]  # cursor on, on, off, off
-    body_top = [next(y for y, r in enumerate(f) if "O" in r) for f in frames]
-    assert body_top == [9, 8, 9, 8]
+    assert [visible(f, "K") for f in frames] == [8, 8, 5, 5]  # cursor on, on, off, off
+    tops = [next(y for y, r in enumerate(f) if r.strip(".")) for f in frames]
+    assert [t - min(tops) for t in tops] == [1, 0, 1, 0]
+
+
+def test_three_quarter_view_differs_from_front_view():
+    assert all_frames("idle", "3q")[0] != all_frames("idle", "front")[0]
