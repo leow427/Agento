@@ -42,3 +42,11 @@ def test_header_export(tmp_path):
     assert "PALETTE565[9]" in h
     assert "0xDBAA" in h  # clay orange #D97757 as RGB565
     assert h.count("{") == h.count("}")
+
+
+def test_header_exports_24_bit_palette(tmp_path):
+    m = build.build_model()
+    out = tmp_path / "frames_data.h"
+    build.write_header(m, out)
+    h = out.read_text()
+    assert "constexpr uint32_t PALETTE_RGB[9] = {0x000000, 0xD97757, 0xB05A3F, 0x141313," in h

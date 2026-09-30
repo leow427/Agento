@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Terminal Buddy setup</title>
+<style>
+  :root {
+    --bg: #000; --panel: #141313; --line: #3d3d3a; --text: #faf9f5; --dim: #b0aea5;
+    --clay: #d97757; --clay-dark: #b05a3f; --good: #6bbf59; --bad: #e0709b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: max(20px, env(safe-area-inset-top)) 16px 40px;
+    display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+  }
+  main { width: 100%; max-width: 420px; }
+  .hero { display: grid; justify-items: center; gap: 6px; margin: 8px 0 18px; }
+  .hero img { width: 144px; height: 144px; image-rendering: pixelated; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .5px; }
+  h1 .prompt { color: var(--clay); }
+  .cursor { display: inline-block; width: .6em; height: 3px; background: var(--text); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .sub { color: var(--dim); margin: 0; text-align: center; }
+  .card { background: var(--panel); border: 3px solid var(--line); padding: 16px; margin-bottom: 16px; }
+  .step { color: var(--clay); font-weight: 700; margin: 0 0 10px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  button, input {
+    font: inherit; color: var(--text); background: #000; border: 3px solid var(--line);
+    padding: 10px 12px; width: 100%; border-radius: 0; -webkit-appearance: none; appearance: none;
+  }
+  .net { display: flex; justify-content: space-between; align-items: center; text-align: left; cursor: pointer; }
+  .net[aria-pressed="true"] { border-color: var(--clay); box-shadow: inset 0 0 0 2px var(--clay); }
+  .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+  .bars i { width: 4px; background: var(--line); }
+  .bars i.on { background: var(--clay); }
+  .lock { color: var(--dim); margin-left: 8px; }
+  label { display: block; color: var(--dim); margin: 12px 0 6px; }
+  input:focus, button:focus-visible { outline: none; border-color: var(--clay); }
+  .go {
+    margin-top: 16px; background: var(--clay); border-color: var(--clay); color: #141313; font-weight: 700;
+    box-shadow: 0 5px 0 var(--clay-dark); transform: translateY(0); cursor: pointer;
+  }
+  .go:active { box-shadow: 0 1px 0 var(--clay-dark); transform: translateY(4px); }
+  .go:disabled { opacity: .5; }
+  .link { background: none; border: none; color: var(--dim); text-decoration: underline; padding: 8px 0 0; width: auto; cursor: pointer; }
+  .msg { min-height: 1.4em; margin: 10px 0 0; }
+  .msg.bad { color: var(--bad); }
+  .msg.good { color: var(--good); }
+  .empty { color: var(--dim); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <img id="buddy" alt="" src="/buddy.svg?a=idle&s=0">
+    <h1><span class="prompt">&gt;</span> terminal buddy<span class="cursor"></span></h1>
+    <p class="sub" id="tagline">let's get me online</p>
+  </div>
+
+  <form id="form" class="card" autocomplete="off">
+    <p class="step">1. pick your Wi-Fi</p>
+    <ul id="nets"><li class="empty">looking for networks…</li></ul>
+    <button type="button" class="link" id="rescan">scan again</button>
+    <button type="button" class="link" id="other">type a name instead</button>
+    <div id="manual" hidden>
+      <label for="ssid">network name</label>
+      <input id="ssid" name="ssid" maxlength="32" autocapitalize="off" spellcheck="false">
+    </div>
+
+    <p class="step" style="margin-top:18px">2. type its password</p>
+    <input id="pass" name="pass" type="password" maxlength="63" autocapitalize="off" spellcheck="false" placeholder="leave empty if it has none">
+    <button class="go" id="go" type="submit">connect</button>
+    <p class="msg" id="msg" role="status"></p>
+  </form>
+
+  <div class="card" id="done" hidden>
+    <p class="step">all set</p>
+    <p style="margin:0">I'm on <b id="doneSsid"></b>. You can close this page; I'll look for your Mac next.</p>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let chosen = "";
+
+// The buddy on the page plays the same frames as the watch.
+const ANIMS = { idle: [400, 4], coding: [80, 4], needs_you: [300, 4] };
+let anim = "idle", step = 0, timer = 0;
+function play(name) {
+  anim = name; step = 0;
+  for (let s = 0; s < ANIMS[name][1]; s++) new Image().src = `/buddy.svg?a=${name}&s=${s}`;  // preload
+  clearInterval(timer);
+  timer = setInterval(() => {
+    step = (step + 1) % ANIMS[anim][1];
+    $("buddy").src = `/buddy.svg?a=${anim}&s=${step}`;
+  }, ANIMS[name][0]);
+}
+
+function bars(rssi) {
+  const n = rssi > -55 ? 4 : rssi > -65 ? 3 : rssi > -75 ? 2 : 1;
+  return `<span class="bars">${[1, 2, 3, 4].map((i) => `<i class="${i <= n ? "on" : ""}" style="height:${i * 3 + 2}px"></i>`).join("")}</span>`;
+}
+
+function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+
+async function scan() {
+  $("nets").innerHTML = '<li class="empty">looking for networks…</li>';
+  try {
+    const list = await (await fetch("/scan")).json();
+    if (!list.length) { $("nets").innerHTML = '<li class="empty">no networks found — try again, or type a name</li>'; return; }
+    $("nets").innerHTML = list.map((n) =>
+      `<li><button type="button" class="net" data-ssid="${esc(n.ssid)}" aria-pressed="${n.ssid === chosen}">` +
+      `<span>${esc(n.ssid)}${n.secure ? '<span class="lock">🔒</span>' : ""}</span>${bars(n.rssi)}</button></li>`).join("");
+  } catch {
+    $("nets").innerHTML = '<li class="empty">couldn\'t scan — try again</li>';
+  }
+}
+
+$("nets").addEventListener("click", (e) => {
+  const b = e.target.closest(".net");
+  if (!b) return;
+  chosen = b.dataset.ssid;
+  $("ssid").value = chosen;
+  for (const x of document.querySelectorAll(".net")) x.setAttribute("aria-pressed", x === b);
+  $("pass").focus();
+});
+$("rescan").onclick = scan;
+$("other").onclick = () => { $("manual").hidden = false; $("ssid").focus(); };
+
+function say(text, kind) { $("msg").textContent = text; $("msg").className = "msg " + (kind || ""); }
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const ssid = $("ssid").value.trim() || chosen;
+  if (!ssid) return say("pick a network first", "bad");
+  $("go").disabled = true;
+  say("sending…");
+  try {
+    const r = await fetch("/connect", { method: "POST", body: new URLSearchParams({ ssid, pass: $("pass").value }) });
+    const j = await r.json();
+    if (!r.ok) { $("go").disabled = false; return say(j.error || "that didn't work", "bad"); }
+    watch();
+  } catch {
+    $("go").disabled = false;
+    say("I didn't hear back — check you're still on my Wi-Fi", "bad");
+  }
+});
+
+// The phone can drop off our Wi-Fi for a moment while the radio switches channel; keep asking.
+async function watch() {
+  play("coding");
+  $("tagline").textContent = "connecting…";
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1000));
+    let st;
+    try { st = await (await fetch("/status", { cache: "no-store" })).json(); } catch { continue; }
+    if (st.step === "connecting") { say(`joining ${st.ssid}…`); continue; }
+    if (st.step === "done") {
+      play("idle");
+      $("form").hidden = true; $("done").hidden = false; $("doneSsid").textContent = st.ssid;
+      $("tagline").textContent = "online!";
+      return;
+    }
+    play("needs_you");
+    $("tagline").textContent = "hmm, that didn't work";
+    $("go").disabled = false;
+    return say(`couldn't join ${st.ssid} — check the password and try again`, "bad");
+  }
+}
+
+play("idle");
+scan();
+</script>
+</body>
+</html>

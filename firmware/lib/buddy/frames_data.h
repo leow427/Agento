@@ -5,6 +5,7 @@
 constexpr int GRID = 29;
 constexpr int FRAME_COUNT = 25;
 constexpr uint16_t PALETTE565[9] = {0x0000, 0xDBAA, 0xB2C7, 0x1082, 0xFFDE, 0x39E7, 0xB574, 0xF77C, 0xECAF};
+constexpr uint32_t PALETTE_RGB[9] = {0x000000, 0xD97757, 0xB05A3F, 0x141313, 0xFAF9F5, 0x3D3D3A, 0xB0AEA5, 0xF0EEE6, 0xE8957A};
 
 struct Step { uint16_t frame; uint16_t ms; };
 struct Anim { const Step* steps; uint8_t count; bool loop; uint32_t holdMs; uint8_t next; };

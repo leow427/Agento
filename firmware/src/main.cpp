@@ -5,6 +5,7 @@
 #include <Arduino_GFX_Library.h>
 #include <TouchDrvCSTXXX.hpp>
 #include "board_pins.h"
+#include <qrcode.h>
 #include "director.h"
 #include "net.h"
 #include "session_model.h"
@@ -30,9 +31,9 @@ static Director nobody;                    // the orange idle shown when there a
 static Player disconnectedPlayer;
 static SwipeDetector swipes;
 
-enum class Screen : uint8_t { Main, Messages, Disconnected };
+enum class Screen : uint8_t { Main, Messages, Disconnected, Setup };
 static const char* screenName(Screen s) {
-  return s == Screen::Main ? "main" : s == Screen::Messages ? "messages" : "disconnected";
+  return s == Screen::Main ? "main" : s == Screen::Messages ? "messages" : s == Screen::Setup ? "setup" : "disconnected";
 }
 static Screen screen = Screen::Disconnected;
 static bool wantMessages = false;  // user swiped up (kept while disconnected)
@@ -121,6 +122,88 @@ static void drawMessages(const Session& s) {
     }
     bottom -= n * lineH + 8;
   }
+}
+
+// ---------- first-time setup screens ----------
+
+// Whole frame at any cell size, run-merged, black included (so it repaints without a clear).
+static void drawFrameAt(uint16_t f, uint8_t slot, int cell, int ox, int oy) {
+  const uint8_t* px = FRAMES[f];
+  for (int y = 0; y < GRID; y++)
+    for (int x = 0; x < GRID;) {
+      const uint8_t c = px[y * GRID + x];
+      int end = x + 1;
+      while (end < GRID && px[y * GRID + end] == c) end++;
+      gfx->fillRect(ox + x * cell, oy + y * cell, (end - x) * cell, cell, slotColour(c, slot));
+      x = end;
+    }
+}
+
+static uint8_t qr[45 * 45];  // modules of the "join my Wi-Fi" code
+static int qrSize = 0;
+static void qrCapture(esp_qrcode_handle_t q) {
+  qrSize = esp_qrcode_get_size(q);
+  if (qrSize > 45) qrSize = 0;
+  for (int y = 0; y < qrSize; y++)
+    for (int x = 0; x < qrSize; x++) qr[y * qrSize + x] = esp_qrcode_get_module(q, x, y);
+}
+
+// Step 1: a cream card with the QR code (the camera joins our Wi-Fi), plus name and password.
+static void drawSetupJoin(const SetupView& v) {
+  clearScreen();
+  drawCentred("hi! set me up", 58, PALETTE565[1]);
+  drawCentred("1. join my wifi", 84, CREAM);
+  char payload[128];
+  wifiQrPayload(payload, sizeof payload, v.apSsid, v.apPass);
+  esp_qrcode_config_t cfg = {qrCapture, 6, ESP_QRCODE_ECC_LOW};
+  qrSize = 0;
+  esp_qrcode_generate(&cfg, payload);
+  if (qrSize) {
+    const int m = 150 / qrSize < 4 ? 4 : 150 / qrSize;  // module size in px
+    const int side = qrSize * m, card = side + 4 * m;
+    const int cx = R - card / 2, cy = 112;
+    gfx->fillRect(cx, cy, card, card, CREAM);
+    for (int y = 0; y < qrSize; y++)
+      for (int x = 0; x < qrSize; x++)
+        if (qr[y * qrSize + x]) gfx->fillRect(cx + 2 * m + x * m, cy + 2 * m + y * m, m, m, PALETTE565[3]);
+  }
+  drawCentred("scan with your camera", 316, GREY);
+  drawCentred(v.apSsid, 346, CREAM);
+  char pw[24];
+  snprintf(pw, sizeof pw, "password %s", v.apPass);
+  drawCentred(pw, 372, PALETTE565[1]);
+}
+
+// Steps 2-4: the buddy (small) with a line or two of what happens next.
+static void drawSetupText(const SetupView& v) {
+  gfx->fillRect(0, 290, LCD_WIDTH, LCD_HEIGHT - 290, 0x0000);
+  char line[48];
+  switch (v.step) {
+    case SetupStep::Open:
+      drawCentred("2. a setup page opens", 300, CREAM);
+      drawCentred("on your phone", 326, CREAM);
+      drawCentred("(or go to 192.168.4.1)", 358, GREY);
+      break;
+    case SetupStep::Connecting:
+      drawCentred("joining", 306, CREAM);
+      drawCentred(v.ssid, 332, PALETTE565[1]);
+      drawCentred("...", 358, GREY);
+      break;
+    case SetupStep::Failed:
+      snprintf(line, sizeof line, "couldn't join %s", v.ssid);
+      drawCentred(line, 306, CREAM);
+      drawCentred("check the password", 332, GREY);
+      drawCentred("on your phone", 358, GREY);
+      break;
+    default:
+      drawCentred("online!", 312, PALETTE565[1]);
+      drawCentred("looking for your mac", 340, GREY);
+      break;
+  }
+}
+
+static uint8_t setupAnim(SetupStep s) {
+  return s == SetupStep::Connecting ? ANIM_CODING : s == SetupStep::Failed ? ANIM_NEEDS_YOU : ANIM_IDLE;
 }
 
 // ---------- sessions ----------
@@ -218,6 +301,7 @@ static Swipe pollTouch(uint32_t now) {
 void setup() {
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);  // never stall the animation when no host reads USB serial
+  pinMode(0, INPUT_PULLUP);  // BOOT
   boardPowerUp();
   if (!gfx->begin()) {
     Serial.println("gfx->begin() failed");
@@ -241,6 +325,21 @@ void loop() {
   String body;
   if (netTake(body)) applyResponse(body, now);
 
+  // Hold BOOT for 3 s to run Wi-Fi setup again.
+  static uint32_t bootDownAt = 0;
+  static bool bootFired = false;
+  if (digitalRead(0) == LOW) {
+    if (!bootDownAt) bootDownAt = now | 1;
+    if (!bootFired && now - bootDownAt >= 3000) {
+      bootFired = true;
+      Serial.println("BOOT held: starting setup");
+      netRequestSetup();
+    }
+  } else {
+    bootDownAt = 0;
+    bootFired = false;
+  }
+
   const Swipe sw = pollTouch(now);
   if (sw != Swipe::None) {
     Serial.printf("swipe %s\n", swipeName(sw));
@@ -263,7 +362,10 @@ void loop() {
   if (selectedIndex() < 0) select(stepSelection(model.count(), -1, +1, visibleAt, nullptr));
   const int sel = selectedIndex();
 
-  const Screen want = netDisconnected() ? Screen::Disconnected
+  SetupView sv;
+  netSetupView(sv);
+  const Screen want = sv.active ? Screen::Setup
+                      : netDisconnected() ? Screen::Disconnected
                       : (wantMessages && sel >= 0) ? Screen::Messages
                                                    : Screen::Main;
   if (want != screen) {
@@ -273,7 +375,30 @@ void loop() {
   }
 
   static uint32_t shownMsgSeq = 0;
+  static SetupStep shownStep = SetupStep::Join;
+  static Player setupPlayer;
   switch (screen) {
+    case Screen::Setup: {
+      if (redrawAll || sv.step != shownStep) {
+        Serial.printf("setup screen: %s\n", setupStepName(sv.step));
+        if (sv.step == SetupStep::Join) {
+          drawSetupJoin(sv);
+        } else {
+          if (redrawAll || shownStep == SetupStep::Join) clearScreen();
+          setupPlayer.setLoopForever(true);
+          setupPlayer.play(setupAnim(sv.step), now);
+          drawSetupText(sv);
+        }
+        shownStep = sv.step;
+      }
+      if (sv.step != SetupStep::Join) {
+        static uint16_t lastSetupFrame = 0xFFFF;
+        const uint16_t f = setupPlayer.tick(now);
+        if (f != lastSetupFrame || redrawAll) drawFrameAt(f, 0, 8, R - 116, 40);
+        lastSetupFrame = f;
+      }
+      break;
+    }
     case Screen::Disconnected:
       if (redrawAll) clearScreen();
       drawFrame(disconnectedPlayer.tick(now), 0);

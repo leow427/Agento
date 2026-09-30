@@ -1,9 +1,15 @@
 #include "net.h"
+#include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
+#include <WebServer.h>
 #include <WiFi.h>
 #include <atomic>
+#include "buddy_svg.h"
+#include "frames_data.h"
 #include "link.h"
+#include "provision.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -15,12 +21,19 @@
 
 static constexpr uint16_t DEFAULT_PORT = 8765;
 static constexpr uint32_t POLL_MS = 1000;
+static constexpr uint32_t JOIN_MS = 10000;  // how long one join attempt may take
+static constexpr int ROUNDS_BEFORE_SETUP = 2;  // full passes over the saved networks before asking for new ones
 
 static SemaphoreHandle_t lock;
 static String mailbox;
 static bool mailFull = false;
 static std::atomic<uint32_t> since{0};  // 0 on boot: the Mac sends its full history
 static std::atomic<bool> down{true};
+static std::atomic<bool> setupRequested{false};
+
+static CredStore store;
+static SetupFlow flow;
+static SetupView view;  // guarded by `lock`
 
 bool netTake(String& body) {
   if (!mailFull) return false;
@@ -34,6 +47,202 @@ bool netTake(String& body) {
 
 void netSetSince(uint32_t seq) { since = seq; }
 bool netDisconnected() { return down; }
+void netRequestSetup() { setupRequested = true; }
+
+void netSetupView(SetupView& out) {
+  xSemaphoreTake(lock, portMAX_DELAY);
+  out = view;
+  xSemaphoreGive(lock);
+}
+
+static void publishView(bool active) {
+  xSemaphoreTake(lock, portMAX_DELAY);
+  view.active = active;
+  view.step = flow.step();
+  strlcpy(view.ssid, flow.ssid(), sizeof view.ssid);
+  xSemaphoreGive(lock);
+}
+
+// ---------- saved networks ----------
+
+static void loadStore() {
+  Preferences p;
+  p.begin("buddy", true);
+  const String text = p.getString("nets", "");
+  p.end();
+  if (!store.deserialize(text.c_str())) Serial.println("wifi: saved networks unreadable; starting fresh");
+  Serial.printf("wifi: %d saved network(s)%s\n", store.count(), *WIFI_SSID ? " + secrets.h" : "");
+}
+
+static void saveStore() {
+  Preferences p;
+  p.begin("buddy", false);
+  p.putString("nets", store.serialize().c_str());
+  p.end();
+}
+
+// Saved networks (newest first), then secrets.h as a developer default.
+static int candidateCount() { return store.count() + (*WIFI_SSID ? 1 : 0); }
+static void candidate(int i, const char** ssid, const char** pass) {
+  if (i < store.count()) {
+    *ssid = store.at(i).ssid;
+    *pass = store.at(i).pass;
+  } else {
+    *ssid = WIFI_SSID;
+    *pass = WIFI_PASS;
+  }
+}
+
+// ---------- setup mode: our own access point + captive web page ----------
+
+extern const uint8_t portal_html_start[] asm("_binary_src_portal_html_start");
+extern const uint8_t portal_html_end[] asm("_binary_src_portal_html_end");
+
+static DNSServer dns;
+static WebServer web(80);
+static bool setupOn = false;
+static bool pendingJoin = false;
+static Cred pending;
+
+static uint8_t animByName(const String& name) {
+  if (name == "coding") return ANIM_CODING;
+  if (name == "needs_you") return ANIM_NEEDS_YOU;
+  return ANIM_IDLE;
+}
+
+static void sendJson(int code, const String& body) {
+  web.sendHeader("Cache-Control", "no-store");
+  web.send(code, "application/json", body);
+}
+
+static String scanJson() {
+  int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_FAILED || n == -2) n = WiFi.scanNetworks(false, false);
+  for (uint32_t t0 = millis(); n == WIFI_SCAN_RUNNING && millis() - t0 < 6000; n = WiFi.scanComplete()) delay(50);
+  String out = "[";
+  int shown = 0;
+  for (int i = 0; i < n && shown < 15; i++) {
+    const String ssid = WiFi.SSID(i);
+    if (ssid.isEmpty()) continue;
+    bool dup = false;  // list each name once, at its strongest
+    for (int j = 0; j < n && !dup; j++) dup = j != i && WiFi.SSID(j) == ssid && WiFi.RSSI(j) > WiFi.RSSI(i);
+    for (int j = 0; j < i && !dup; j++) dup = WiFi.SSID(j) == ssid && WiFi.RSSI(j) == WiFi.RSSI(i);
+    if (dup) continue;
+    String esc = ssid;
+    esc.replace("\\", "\\\\");
+    esc.replace("\"", "\\\"");
+    out += String(shown++ ? "," : "") + "{\"ssid\":\"" + esc + "\",\"rssi\":" + WiFi.RSSI(i) +
+           ",\"secure\":" + (WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "false" : "true") + "}";
+  }
+  WiFi.scanDelete();
+  return out + "]";
+}
+
+static void startSetup() {
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  xSemaphoreTake(lock, portMAX_DELAY);
+  apName(view.apSsid, sizeof view.apSsid, mac);
+  apPassword(view.apPass, [] { return (uint32_t)esp_random(); });
+  xSemaphoreGive(lock);
+  flow = SetupFlow();
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(view.apSsid, view.apPass);
+  delay(100);
+  const IPAddress ip = WiFi.softAPIP();
+  dns.setErrorReplyCode(DNSReplyCode::NoError);
+  dns.start(53, "*", ip);
+
+  web.on("/", HTTP_GET, [] {
+    web.sendHeader("Cache-Control", "no-store");
+    web.send_P(200, "text/html", (const char*)portal_html_start, portal_html_end - portal_html_start);
+  });
+  web.on("/buddy.svg", HTTP_GET, [] {
+    const uint8_t a = animByName(web.arg("a"));
+    const int s = constrain(web.arg("s").toInt(), 0, ANIMS[a].count - 1);
+    web.sendHeader("Cache-Control", "max-age=86400");
+    web.send(200, "image/svg+xml", buddySvg(ANIMS[a].steps[s].frame, 0).c_str());
+  });
+  web.on("/scan", HTTP_GET, [] { sendJson(200, scanJson()); });
+  web.on("/status", HTTP_GET, [] { sendJson(200, flow.statusJson().c_str()); });
+  web.on("/connect", HTTP_POST, [] {
+    const String ssid = web.arg("ssid"), pass = web.arg("pass");
+    if (const char* err = validateCreds(ssid.c_str(), pass.c_str())) {
+      sendJson(400, String("{\"error\":\"") + err + "\"}");
+      return;
+    }
+    strlcpy(pending.ssid, ssid.c_str(), sizeof pending.ssid);
+    strlcpy(pending.pass, pass.c_str(), sizeof pending.pass);
+    pendingJoin = true;
+    flow.submit(pending.ssid);
+    Serial.printf("setup: page asked to join %s\n", pending.ssid);
+    sendJson(202, "{}");
+  });
+  // Captive portal: every other URL (Apple's hotspot-detect, Android's generate_204...) goes to the page.
+  web.onNotFound([] {
+    web.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
+    web.send(302, "text/plain", "");
+  });
+  web.begin();
+  WiFi.scanNetworks(true);  // warm the list before the phone asks
+  setupOn = true;
+  publishView(true);
+  Serial.printf("setup: access point %s up at %s\n", view.apSsid, ip.toString().c_str());
+}
+
+static void stopSetup() {
+  web.stop();
+  dns.stop();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  setupOn = false;
+  publishView(false);
+  Serial.println("setup: access point off");
+}
+
+// Runs one setup-mode iteration. Returns true once we are online and setup has finished.
+static bool setupTick() {
+  static uint32_t joinStarted = 0, doneAt = 0;
+  static int lastClients = -1;
+  dns.processNextRequest();
+  web.handleClient();
+  const int clients = WiFi.softAPgetStationNum();
+  if (clients != lastClients) {
+    Serial.printf("setup: %d phone(s) on the access point\n", clients);
+    lastClients = clients;
+  }
+  const SetupStep before = flow.step();
+  flow.clients(clients);
+
+  if (pendingJoin) {
+    pendingJoin = false;
+    WiFi.disconnect(false, false);
+    WiFi.begin(pending.ssid, pending.pass);
+    joinStarted = millis();
+  }
+  if (flow.step() == SetupStep::Connecting) {
+    if (WiFi.status() == WL_CONNECTED) {
+      store.add(pending.ssid, pending.pass);
+      saveStore();
+      flow.joined(true);
+      doneAt = millis();
+      Serial.printf("setup: joined %s, saved\n", pending.ssid);
+    } else if (millis() - joinStarted > JOIN_MS) {
+      WiFi.disconnect(false, false);
+      flow.joined(false);
+      Serial.printf("setup: could not join %s\n", pending.ssid);
+    }
+  }
+  if (flow.step() != before) {
+    Serial.printf("setup step: %s -> %s\n", setupStepName(before), setupStepName(flow.step()));
+    publishView(true);
+  }
+  // Leave the page a few seconds to show "all set" before the access point goes away.
+  return flow.step() == SetupStep::Done && millis() - doneAt > 8000;
+}
+
+// ---------- normal mode: join, find AgentFunnel, poll ----------
 
 static String host;
 static uint16_t port = 0;
@@ -81,19 +290,42 @@ static bool poll() {
 static void netTask(void*) {
   Link link;
   Backoff backoff(1000, 30000);
-  bool wasUp = false, haveHost = false, everPolled = false;
+  bool wasUp = false, haveHost = false, everPolled = false, everJoined = false;
   uint32_t nextJoin = 0, nextResolve = 0, nextPoll = 0;
-  int fails = 0;
+  int fails = 0, attempt = 0;
+
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(false);  // we reconnect ourselves, with backoff
-  if (!*WIFI_SSID) Serial.println("wifi: no secrets.h (copy secrets.example.h); staying offline");
+  loadStore();
+  if (candidateCount() == 0) {
+    Serial.println("wifi: no saved networks; starting setup");
+    startSetup();
+  }
 
   for (;;) {
     const uint32_t now = millis();
+    if (setupRequested.exchange(false) && !setupOn) {
+      Serial.println("setup: requested (BOOT held)");
+      MDNS.end();
+      startSetup();
+    }
+    if (setupOn) {
+      down = true;
+      if (setupTick()) {
+        stopSetup();
+        wasUp = false;  // treat as a fresh connection below
+        everJoined = true;
+      }
+      vTaskDelay(pdMS_TO_TICKS(5));
+      continue;
+    }
+
     const bool up = WiFi.status() == WL_CONNECTED;
     if (up && !wasUp) {
-      Serial.printf("wifi connected: %s ip %s\n", WIFI_SSID, WiFi.localIP().toString().c_str());
+      Serial.printf("wifi connected: %s ip %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
       backoff.reset();
+      attempt = 0;
+      everJoined = true;
       MDNS.begin("terminal-buddy");
       haveHost = false;
       nextResolve = now;
@@ -105,12 +337,21 @@ static void netTask(void*) {
     wasUp = up;
     link.setWifi(up);
 
-    if (!up && *WIFI_SSID && (int32_t)(now - nextJoin) >= 0) {
-      const uint32_t wait = backoff.next();
-      Serial.printf("wifi connecting to %s (next retry in %lu ms)\n", WIFI_SSID, (unsigned long)(8000 + wait));
+    if (!up && candidateCount() > 0 && (int32_t)(now - nextJoin) >= 0) {
+      // Before we've ever been online, a couple of failed rounds means these networks aren't around: ask.
+      if (!everJoined && attempt >= ROUNDS_BEFORE_SETUP * candidateCount()) {
+        Serial.println("wifi: none of the saved networks answered; starting setup");
+        startSetup();
+        continue;
+      }
+      const char *ssid, *pass;
+      candidate(attempt % candidateCount(), &ssid, &pass);
+      const uint32_t wait = attempt < candidateCount() ? 0 : backoff.next();
+      Serial.printf("wifi connecting to %s (attempt %d)\n", ssid, attempt + 1);
       WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASS);
-      nextJoin = now + 8000 + wait;  // give the join ~8 s, then back off
+      WiFi.begin(ssid, pass);
+      attempt++;
+      nextJoin = now + JOIN_MS + wait;
     }
     if (up && !haveHost && (int32_t)(now - nextResolve) >= 0) {
       haveHost = resolve();
@@ -138,5 +379,5 @@ static void netTask(void*) {
 
 void netStart() {
   lock = xSemaphoreCreateMutex();
-  xTaskCreatePinnedToCore(netTask, "net", 8192, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);
 }
