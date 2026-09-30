@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terminal Buddy preview</title>
+<style>
+  body { background:#1c1c1b; color:#d6d3cb; font:14px system-ui; margin:0; padding:20px; display:grid; justify-items:center; gap:14px; }
+  #screen { width:466px; height:466px; border-radius:50%; background:#000; box-shadow:0 0 0 8px #3d3d3a; image-rendering:pixelated; cursor:pointer; }
+  button { font:inherit; padding:6px 12px; }
+  #sheet { max-width:100%; background:#000; image-rendering:pixelated; }
+  code { color:#d97757; }
+</style>
+<canvas id="screen" width="466" height="466"></canvas>
+<div><button id="toggle">Toggle (same as BOOT button)</button> <span id="status"></span></div>
+<div>Click the screen or press <code>space</code> to toggle. Contact sheet of every frame below.</div>
+<canvas id="sheet"></canvas>
+<script src="data.js"></script>
+<script>
+const D = window.DATA, CELL = 16, ORIGIN = 2;
+
+function drawFrame(ctx, frame, cell, ox, oy) {
+  for (let y = 0; y < D.grid; y++)
+    for (let x = 0; x < D.grid; x++) {
+      const col = D.palette[frame[y][x]];
+      if (!col) continue;
+      ctx.fillStyle = col;
+      ctx.fillRect(ox + x * cell, oy + y * cell, cell, cell);
+    }
+}
+
+class Player {  // mirrors firmware/lib/buddy/player.h and tools/player.py
+  constructor(now) { this.start(D.start, now); }
+  start(a, now) { this.anim = a; this.step = 0; this.stepStart = now; this.animStart = now; }
+  tick(now) {
+    for (;;) {
+      const a = D.anims[this.anim], ms = a.steps[this.step].ms;
+      if (now - this.stepStart < ms) break;
+      this.stepStart += ms;
+      if (++this.step < a.steps.length) continue;
+      this.step = 0;
+      if (!(a.loop && this.stepStart - this.animStart < a.hold_ms)) { this.anim = a.next; this.animStart = this.stepStart; }
+    }
+    return D.anims[this.anim].steps[this.step].frame;
+  }
+  toggle(now) {
+    if (this.anim === "idle") this.start("to_coding", now);
+    else if (this.anim === "coding") this.start("to_idle", now);
+  }
+}
+
+const screen = document.getElementById("screen").getContext("2d");
+const status = document.getElementById("status");
+const player = new Player(performance.now());
+let shown = -1;
+function loop(now) {
+  const f = player.tick(now);
+  if (f !== shown) {
+    screen.clearRect(0, 0, 466, 466);
+    drawFrame(screen, D.frames[f], CELL, ORIGIN, ORIGIN);
+    shown = f;
+  }
+  status.textContent = player.anim + " / frame " + f;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+const toggle = () => player.toggle(performance.now());
+document.getElementById("toggle").onclick = toggle;
+document.getElementById("screen").onclick = toggle;
+addEventListener("keydown", e => { if (e.code === "Space") { e.preventDefault(); toggle(); } });
+
+// contact sheet: every frame at 6px cells, with its index
+const sheet = document.getElementById("sheet"), sc = sheet.getContext("2d");
+const S = 6, W = D.grid * S + 8, cols = 6, rows = Math.ceil(D.frames.length / cols);
+sheet.width = cols * W; sheet.height = rows * (D.grid * S + 20);
+sc.font = "12px system-ui";
+D.frames.forEach((fr, i) => {
+  const ox = (i % cols) * W + 4, oy = Math.floor(i / cols) * (D.grid * S + 20) + 16;
+  sc.fillStyle = "#888"; sc.fillText("#" + i, ox, oy - 4);
+  sc.strokeStyle = "#333"; sc.strokeRect(ox - 0.5, oy - 0.5, D.grid * S + 1, D.grid * S + 1);
+  drawFrame(sc, fr, S, ox, oy);
+});
+</script>
