@@ -3,6 +3,7 @@ class Player:
 
     def __init__(self, anims, start, now_ms=0):
         self.anims = anims
+        self.loop_forever = False  # wearable mode: looping anims never hand off on their own
         self._start(start, now_ms)
 
     def _start(self, anim, now):
@@ -22,11 +23,14 @@ class Player:
             if self.step < len(a["steps"]):
                 continue
             self.step = 0
-            holding = a["loop"] and (self.step_start - self.anim_start) < a.get("hold_ms", 0)
+            holding = a["loop"] and (self.loop_forever or (self.step_start - self.anim_start) < a.get("hold_ms", 0))
             if not holding:
                 self.anim = a["next"]
                 self.anim_start = self.step_start
         return self.step
+
+    def play(self, anim, now):
+        self._start(anim, now)
 
     def toggle(self, now):
         if self.anim == "idle":

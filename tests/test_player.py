@@ -73,3 +73,22 @@ def test_big_time_gap_catches_up_without_hanging():
     frame = p.tick(10_000_000)
     assert p.anim in ANIMATIONS
     assert 0 <= frame < len(ANIMATIONS[p.anim]["steps"])
+
+
+def test_play_jumps_to_any_animation():
+    p = make()
+    p.play("needs_you", 100)
+    assert p.anim == "needs_you"
+    assert p.tick(100) == 0
+
+
+def test_loop_forever_keeps_looping_past_the_hold():
+    p = make()
+    p.loop_forever = True
+    p.tick(60000)
+    assert p.anim == "idle"
+    p.play("to_coding", 60000)
+    p.tick(60320)
+    assert p.anim == "coding"  # transitions still follow "next"
+    p.tick(200000)
+    assert p.anim == "coding"

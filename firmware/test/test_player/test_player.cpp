@@ -66,6 +66,25 @@ void test_survives_millis_wraparound() {
   p.tick(t0 + 6720u); TEST_ASSERT_EQUAL_UINT8(ANIM_CODING, p.anim());
 }
 
+void test_play_jumps_to_any_animation() {
+  Player p(0);
+  p.play(ANIM_NEEDS_YOU, 100);
+  TEST_ASSERT_EQUAL_UINT8(ANIM_NEEDS_YOU, p.anim());
+  TEST_ASSERT_EQUAL_UINT16(ANIMS[ANIM_NEEDS_YOU].steps[0].frame, p.tick(100));
+}
+
+void test_loop_forever_keeps_looping_past_the_hold() {
+  Player p(0);
+  p.setLoopForever(true);
+  p.tick(60000);
+  TEST_ASSERT_EQUAL_UINT8(ANIM_IDLE, p.anim());
+  p.play(ANIM_TO_CODING, 60000);
+  p.tick(60320);
+  TEST_ASSERT_EQUAL_UINT8(ANIM_CODING, p.anim());
+  p.tick(200000);
+  TEST_ASSERT_EQUAL_UINT8(ANIM_CODING, p.anim());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_starts_idle);
@@ -75,5 +94,7 @@ int main() {
   RUN_TEST(test_toggle_ignored_during_transitions);
   RUN_TEST(test_big_time_gap_catches_up);
   RUN_TEST(test_survives_millis_wraparound);
+  RUN_TEST(test_play_jumps_to_any_animation);
+  RUN_TEST(test_loop_forever_keeps_looping_past_the_hold);
   return UNITY_END();
 }

@@ -17,7 +17,7 @@ class Player {
       stepStart_ += ms;
       if (++step_ < a.count) continue;
       step_ = 0;
-      const bool holding = a.loop && (stepStart_ - animStart_) < a.holdMs;
+      const bool holding = a.loop && (loopForever_ || (stepStart_ - animStart_) < a.holdMs);
       if (!holding) {
         anim_ = a.next;
         animStart_ = stepStart_;
@@ -30,6 +30,11 @@ class Player {
     if (anim_ == ANIM_IDLE) start(ANIM_TO_CODING, nowMs);
     else if (anim_ == ANIM_CODING) start(ANIM_TO_IDLE, nowMs);
   }
+
+  void play(uint8_t anim, uint32_t nowMs) { start(anim, nowMs); }
+
+  // Wearable mode: looping animations never hand off to `next` on their own.
+  void setLoopForever(bool on) { loopForever_ = on; }
 
   uint8_t anim() const { return anim_; }
 
@@ -45,4 +50,5 @@ class Player {
   uint8_t step_ = 0;
   uint32_t stepStart_ = 0;
   uint32_t animStart_ = 0;
+  bool loopForever_ = false;
 };

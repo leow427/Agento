@@ -78,7 +78,7 @@ SMOKE = {
 }
 
 # "!" floating above his head while a session needs you.
-BANG = ["C", "C", "C", ".", "C"]
+BANG = ["C", "C", ".", "C"]
 
 # Wi-Fi symbol (light grey) for the disconnected screen, crossed by a clay slash drawn on top.
 WIFI = [

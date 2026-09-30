@@ -11,6 +11,8 @@
 </style>
 <canvas id="screen" width="466" height="466"></canvas>
 <div><button id="toggle">Toggle (same as BOOT button)</button> <span id="status"></span></div>
+<div id="anims">Play: </div>
+<div id="slots">Slot: <label><input id="name" type="checkbox" checked> show project name</label> </div>
 <div>Play: <select id="anim"></select> &nbsp; Slot: <span id="slots"></span> &nbsp; <label><input id="name" type="checkbox" checked> project name</label></div>
 <div id="anims"></div>
 <div id="slots"></div>
@@ -19,6 +21,11 @@
 <script src="data.js"></script>
 <script>
 const D = window.DATA, CELL = 16, ORIGIN = 2;
+// Per-session colours: body (O) and shadow (D) swap at render time. Mirrors firmware/lib/buddy/slots.h.
+const SLOTS = [["#D97757", "#B05A3F"], ["#5B8DEF", "#3F66B0"], ["#6BBF59", "#4A8F3C"],
+               ["#A67CE0", "#7A55B0"], ["#E8C547", "#B89A2E"], ["#E0709B", "#B04F76"]];
+let slot = 0;
+function colour(ch) { return ch === "O" ? SLOTS[slot][0] : ch === "D" ? SLOTS[slot][1] : D.palette[ch]; }
 // Slot colours: body / shadow swapped at render time. Mirrors firmware/lib/buddy/slots.h.
 const SLOTS = [["#D97757", "#B05A3F"], ["#5B8DEF", "#3F66B0"], ["#6BBF59", "#4A8F3C"],
                ["#A67CE0", "#7A55B0"], ["#E8C547", "#B89A2E"], ["#E0709B", "#B04F76"]];
@@ -96,6 +103,22 @@ SLOTS.forEach((c, i) => {
 document.getElementById("name").onchange = () => { shown = -1; };
 document.getElementById("toggle").onclick = toggle;
 document.getElementById("screen").onclick = toggle;
+
+// jump straight to any animation, and pick a slot colour
+for (const name of Object.keys(D.anims)) {
+  const b = document.createElement("button");
+  b.textContent = name;
+  b.onclick = () => { player.start(name, performance.now()); shown = -1; };
+  document.getElementById("anims").append(b, " ");
+}
+SLOTS.forEach(([body], i) => {
+  const b = document.createElement("button");
+  b.textContent = "slot " + i;
+  b.style.color = body;
+  b.onclick = () => { slot = i; shown = -1; drawSheet(); };
+  document.getElementById("slots").append(b, " ");
+});
+document.getElementById("name").onchange = () => { shown = -1; };
 addEventListener("keydown", e => { if (e.code === "Space") { e.preventDefault(); toggle(); } });
 
 // jump straight to any animation, and pick a slot colour
@@ -121,6 +144,8 @@ const S = 6, W = D.grid * S + 8, cols = 6, rows = Math.ceil(D.frames.length / co
 sheet.width = cols * W; sheet.height = rows * (D.grid * S + 20);
 function redrawSheet() {
 sc.clearRect(0, 0, sheet.width, sheet.height);
+function drawSheet() {
+sc.clearRect(0, 0, sheet.width, sheet.height);
 sc.font = "12px system-ui";
 D.frames.forEach((fr, i) => {
   const ox = (i % cols) * W + 4, oy = Math.floor(i / cols) * (D.grid * S + 20) + 16;
@@ -128,6 +153,8 @@ D.frames.forEach((fr, i) => {
   sc.strokeStyle = "#333"; sc.strokeRect(ox - 0.5, oy - 0.5, D.grid * S + 1, D.grid * S + 1);
   drawFrame(sc, fr, S, ox, oy);
 });
+}
+drawSheet();
 }
 redrawSheet();
 </script>

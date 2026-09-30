@@ -98,7 +98,7 @@ BODY_POOF_BIG = (4, 10)
 BODY_POOF_M = (7, 11)
 BODY_POOF_S = (11, 13)
 BODY_POOF_PUFFS = (3, 9)
-BANG_POS = (14, 2)
+BANG_POS = (14, 3)
 
 
 def session_anims(rig):
