@@ -35,6 +35,8 @@ static void drawFrame(uint16_t f) {
 
 void setup() {
   Serial.begin(115200);
+  // USB CDC blocks on write while no host is reading; drop logs instead of stalling the animation.
+  Serial.setTxTimeoutMs(0);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   boardPowerUp();
   if (!gfx->begin()) {
