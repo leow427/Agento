@@ -2,6 +2,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { Config } from "./config.ts";
+import { Lanyard } from "./lanyard.ts";
 import { makeLogger } from "./log.ts";
 import { Store } from "./store.ts";
 import { DEFAULT_PORT, startServer } from "./server.ts";
@@ -22,9 +24,11 @@ const port = Number(values.port);
 const log = makeLogger(values.log);
 const store = new Store({ path: values.state, log });
 store.load();
+const config = new Config({ path: values.config, log });
+config.load();
 
 try {
-  const running = await startServer({ store, port, bonjour: !values["no-bonjour"], log });
+  const running = await startServer({ store, config, lanyard: new Lanyard(), port, bonjour: !values["no-bonjour"], log });
   const stop = () => running.close().then(() => process.exit(0));
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);

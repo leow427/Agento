@@ -4,14 +4,20 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { AddressInfo } from "node:net";
+import { Config } from "./config.ts";
+import { MAX_BODY, readBody, send } from "./http.ts";
+import { Lanyard, parseReport } from "./lanyard.ts";
+import type { Report } from "./lanyard.ts";
 import type { Store } from "./store.ts";
 
-export const MAX_BODY = 16 * 1024 * 1024;
+export { MAX_BODY };
 export const SERVICE_TYPE = "_agentfunnel._tcp";
 export const DEFAULT_PORT = 41917; // 8765 is Ultraseek's, AnkiConnect's and the websockets examples'
 
 export type ServerOptions = {
   store: Store;
+  config?: Config;
+  lanyard?: Lanyard;
   port: number;
   host?: string;
   bonjour?: boolean;
@@ -20,36 +26,15 @@ export type ServerOptions = {
 
 export type Running = { port: number; close: () => Promise<void> };
 
-function send(res: ServerResponse, status: number, body = "", type = "text/plain") {
-  res.writeHead(status, body === "" ? {} : { "content-type": type });
-  res.end(body);
-}
+type Ctx = { store: Store; config: Config; lanyard: Lanyard; log: (m: string) => void };
 
-// Reads the body up to MAX_BODY. Past the cap the rest is drained and discarded, so the client
-// still gets a clean 413 instead of a reset connection.
-function readBody(req: IncomingMessage): Promise<Buffer | null> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let tooBig = Number(req.headers["content-length"] ?? 0) > MAX_BODY;
-    req.on("data", (c: Buffer) => {
-      if (tooBig) return;
-      size += c.length;
-      if (size > MAX_BODY) {
-        tooBig = true;
-        chunks.length = 0;
-      } else chunks.push(c);
-    });
-    req.on("end", () => resolve(tooBig ? null : Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-async function handle(store: Store, log: (m: string) => void, req: IncomingMessage, res: ServerResponse) {
+async function handle(ctx: Ctx, req: IncomingMessage, res: ServerResponse) {
+  const { store, config, lanyard, log } = ctx;
   const url = new URL(req.url ?? "/", "http://x");
   if (req.method === "POST" && url.pathname === "/event") {
     const body = await readBody(req);
     if (body === null) return send(res, 413, "too large");
+    if (!config.running) return send(res, 204); // switched off on the page: the hook never notices
     let payload: unknown;
     try {
       payload = JSON.parse(body.toString("utf8"));
@@ -62,8 +47,25 @@ async function handle(store: Store, log: (m: string) => void, req: IncomingMessa
     return send(res, 204);
   }
   if (req.method === "GET" && url.pathname === "/state") {
+    if (url.searchParams.get("lanyard") === "1") lanyard.seen();
     const since = Number(url.searchParams.get("since") ?? 0);
-    return send(res, 200, JSON.stringify(store.snapshot(Number.isFinite(since) ? since : 0)), "application/json");
+    const snap = store.snapshot(Number.isFinite(since) ? since : 0);
+    // Off: the lanyard shows disconnected and keeps its sessions, but settings still reach it.
+    const body = config.running ? { ...snap, running: true } : { seq: snap.seq, sessions: [], messages: [], running: false };
+    const out = { ...body, config: { colour: config.colour }, wifi: config.pendingAfter(lanyard.applied()) };
+    return send(res, 200, JSON.stringify(out), "application/json");
+  }
+  if (req.method === "POST" && url.pathname === "/lanyard") {
+    const body = await readBody(req);
+    if (body === null) return send(res, 413, "too large");
+    let r: Report | null = null;
+    try {
+      r = parseReport(JSON.parse(body.toString("utf8")));
+    } catch {}
+    if (r === null) return send(res, 400, "bad report");
+    lanyard.report(r);
+    config.lanyardApplied(r.applied);
+    return send(res, 204);
   }
   if (req.method === "GET" && url.pathname === "/health") return send(res, 200, "ok");
   req.resume();
@@ -72,8 +74,9 @@ async function handle(store: Store, log: (m: string) => void, req: IncomingMessa
 
 export function startServer(opts: ServerOptions): Promise<Running> {
   const log = opts.log ?? (() => {});
+  const ctx: Ctx = { store: opts.store, config: opts.config ?? new Config(), lanyard: opts.lanyard ?? new Lanyard(), log };
   const server = createServer((req, res) => {
-    handle(opts.store, log, req, res).catch((e) => {
+    handle(ctx, req, res).catch((e) => {
       log(`request failed: ${e}`);
       if (!res.headersSent) send(res, 500, "error");
     });
