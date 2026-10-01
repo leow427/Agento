@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentFunnel</title>
+  <link rel="stylesheet" href="/ui/style.css">
+  <script src="/frames.js"></script>
+  <script type="module" src="/ui/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <canvas id="hero" width="116" height="116" aria-hidden="true"></canvas>
+    <div class="title">
+      <h1>AgentFunnel</h1>
+      <p id="run-state">connecting…</p>
+    </div>
+    <button id="toggle" class="big">…</button>
+  </header>
+  <p id="offline" class="banner" hidden>AgentFunnel isn't responding. Retrying…</p>
+  <main class="grid">
+    <section id="lanyard">
+      <h2>Lanyard</h2>
+      <dl>
+        <dt>last seen</dt><dd id="seen">—</dd>
+        <dt>Wi-Fi</dt><dd id="net">—</dd>
+        <dt>battery</dt><dd id="battery">—</dd>
+      </dl>
+    </section>
+    <section id="sessions">
+      <h2>Sessions</h2>
+      <ul id="session-list" class="rows"></ul>
+      <p id="no-sessions" class="muted">No sessions right now.</p>
+    </section>
+    <section id="colour" class="wide">
+      <h2>Character colour</h2>
+      <p class="muted">The first session (and the idle buddy) uses this colour; the others follow in order.</p>
+      <div id="swatches"></div>
+      <div id="order" aria-label="colour order"></div>
+      <p id="colour-wait" class="wait" hidden>waiting for lanyard…</p>
+    </section>
+    <section id="wifi">
+      <h2>Lanyard Wi-Fi</h2>
+      <p id="wifi-note" class="muted"></p>
+      <ul id="nets" class="rows"></ul>
+      <ul id="pending" class="rows"></ul>
+      <form id="add-net" autocomplete="off">
+        <input id="ssid" placeholder="network name" maxlength="32" required>
+        <input id="pass" type="password" placeholder="password">
+        <label class="show"><input type="checkbox" id="show"> show</label>
+        <button type="submit">add</button>
+        <p id="add-error" class="error"></p>
+      </form>
+    </section>
+    <section id="away">
+      <h2>Away mode</h2>
+      <p class="muted">Tailscale lets the lanyard reach this Mac on your phone's hotspot.</p>
+      <ol id="steps"></ol>
+    </section>
+  </main>
+</body>
+</html>
