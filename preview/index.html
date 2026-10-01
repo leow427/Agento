@@ -10,30 +10,19 @@
   code { color:#d97757; }
 </style>
 <canvas id="screen" width="466" height="466"></canvas>
-<div><button id="toggle">Toggle (same as BOOT button)</button> <span id="status"></span></div>
+<div><button id="toggle">Toggle idle / coding</button> <span id="status"></span></div>
 <div id="anims">Play: </div>
-<div id="slots">Slot: <label><input id="name" type="checkbox" checked> show project name</label> </div>
-<div>Play: <select id="anim"></select> &nbsp; Slot: <span id="slots"></span> &nbsp; <label><input id="name" type="checkbox" checked> project name</label></div>
-<div id="anims"></div>
-<div id="slots"></div>
+<div id="slots">Slot: </div>
+<div><label><input id="name" type="checkbox" checked> show project name</label></div>
 <div>Click the screen or press <code>space</code> to toggle. Contact sheet of every frame below.</div>
 <canvas id="sheet"></canvas>
 <script src="data.js"></script>
 <script>
 const D = window.DATA, CELL = 16, ORIGIN = 2;
-// Per-session colours: body (O) and shadow (D) swap at render time. Mirrors firmware/lib/buddy/slots.h.
-const SLOTS = [["#D97757", "#B05A3F"], ["#5B8DEF", "#3F66B0"], ["#6BBF59", "#4A8F3C"],
-               ["#A67CE0", "#7A55B0"], ["#E8C547", "#B89A2E"], ["#E0709B", "#B04F76"]];
-let slot = 0;
-function colour(ch) { return ch === "O" ? SLOTS[slot][0] : ch === "D" ? SLOTS[slot][1] : D.palette[ch]; }
-// Slot colours: body / shadow swapped at render time. Mirrors firmware/lib/buddy/slots.h.
-const SLOTS = [["#D97757", "#B05A3F"], ["#5B8DEF", "#3F66B0"], ["#6BBF59", "#4A8F3C"],
-               ["#A67CE0", "#7A55B0"], ["#E8C547", "#B89A2E"], ["#E0709B", "#B04F76"]];
-let slot = 0;
-function colour(ch) { return ch === "O" ? SLOTS[slot][0] : ch === "D" ? SLOTS[slot][1] : D.palette[ch]; }
 
 // Per-session colours: body (O) and shadow (D) swap at render time. Mirrors firmware/lib/buddy/slots.h.
-const SLOTS = [["#D97757","#B05A3F"],["#5B8DEF","#3F66B0"],["#6BBF59","#4A8F3C"],["#A67CE0","#7A55B0"],["#E8C547","#B89A2E"],["#E0709B","#B04F76"]];
+const SLOTS = [["#D97757", "#B05A3F"], ["#5B8DEF", "#3F66B0"], ["#6BBF59", "#4A8F3C"],
+               ["#A67CE0", "#7A55B0"], ["#E8C547", "#B89A2E"], ["#E0709B", "#B04F76"]];
 let slot = 0;
 function colour(ch) { return ch === "O" ? SLOTS[slot][0] : ch === "D" ? SLOTS[slot][1] : D.palette[ch]; }
 
@@ -69,15 +58,16 @@ class Player {  // mirrors firmware/lib/buddy/player.h and tools/player.py
 
 const screen = document.getElementById("screen").getContext("2d");
 const status = document.getElementById("status");
+const nameBox = document.getElementById("name");
 const player = new Player(performance.now());
-let shown = -1, redraw = false;
+let shown = -1;  // frame currently painted; set to -1 to force a repaint
+
 function loop(now) {
   const f = player.tick(now);
-  if (f !== shown || redraw) {
-    redraw = false;
+  if (f !== shown) {
     screen.clearRect(0, 0, 466, 466);
     drawFrame(screen, D.frames[f], CELL, ORIGIN, ORIGIN);
-    if (document.getElementById("name").checked && !["gone", "disconnected"].includes(player.anim)) {
+    if (nameBox.checked && !["gone", "disconnected"].includes(player.anim)) {
       screen.fillStyle = SLOTS[slot][0];
       screen.font = "bold 24px ui-monospace, monospace";
       screen.textAlign = "center";
@@ -88,23 +78,24 @@ function loop(now) {
   status.textContent = player.anim + " / frame " + f;
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
-const toggle = () => player.toggle(performance.now());
-const pick = document.getElementById("anim");
-for (const a of Object.keys(D.anims)) pick.add(new Option(a, a));
-pick.onchange = () => { player.start(pick.value, performance.now()); shown = -1; };
-const slotsEl = document.getElementById("slots");
-SLOTS.forEach((c, i) => {
-  const b = document.createElement("button");
-  b.textContent = i; b.style.background = c[0];
-  b.onclick = () => { slot = i; shown = -1; redrawSheet(); };
-  slotsEl.append(b);
-});
-document.getElementById("name").onchange = () => { shown = -1; };
-document.getElementById("toggle").onclick = toggle;
-document.getElementById("screen").onclick = toggle;
 
-// jump straight to any animation, and pick a slot colour
+// contact sheet: every frame at 6px cells, with its index
+const sheet = document.getElementById("sheet"), sc = sheet.getContext("2d");
+const S = 6, W = D.grid * S + 8, cols = 6, rows = Math.ceil(D.frames.length / cols);
+sheet.width = cols * W; sheet.height = rows * (D.grid * S + 20);
+function drawSheet() {
+  sc.clearRect(0, 0, sheet.width, sheet.height);
+  sc.font = "12px system-ui";
+  D.frames.forEach((fr, i) => {
+    const ox = (i % cols) * W + 4, oy = Math.floor(i / cols) * (D.grid * S + 20) + 16;
+    sc.fillStyle = "#888"; sc.fillText("#" + i, ox, oy - 4);
+    sc.strokeStyle = "#333"; sc.strokeRect(ox - 0.5, oy - 0.5, D.grid * S + 1, D.grid * S + 1);
+    drawFrame(sc, fr, S, ox, oy);
+  });
+}
+
+// controls: jump straight to any animation, pick a slot colour, toggle idle / coding
+const toggle = () => player.toggle(performance.now());
 for (const name of Object.keys(D.anims)) {
   const b = document.createElement("button");
   b.textContent = name;
@@ -118,43 +109,11 @@ SLOTS.forEach(([body], i) => {
   b.onclick = () => { slot = i; shown = -1; drawSheet(); };
   document.getElementById("slots").append(b, " ");
 });
-document.getElementById("name").onchange = () => { shown = -1; };
+nameBox.onchange = () => { shown = -1; };
+document.getElementById("toggle").onclick = toggle;
+document.getElementById("screen").onclick = toggle;
 addEventListener("keydown", e => { if (e.code === "Space") { e.preventDefault(); toggle(); } });
 
-// jump straight to any animation, and pick a slot colour
-const animBox = document.getElementById("anims");
-for (const name of Object.keys(D.anims)) {
-  const b = document.createElement("button");
-  b.textContent = name;
-  b.onclick = () => player.start(name, performance.now());
-  animBox.append(b, " ");
-}
-const slotBox = document.getElementById("slots");
-SLOTS.forEach(([body], i) => {
-  const b = document.createElement("button");
-  b.textContent = "slot " + i;
-  b.style.color = body;
-  b.onclick = () => { slot = i; redraw = true; };
-  slotBox.append(b, " ");
-});
-
-// contact sheet: every frame at 6px cells, with its index
-const sheet = document.getElementById("sheet"), sc = sheet.getContext("2d");
-const S = 6, W = D.grid * S + 8, cols = 6, rows = Math.ceil(D.frames.length / cols);
-sheet.width = cols * W; sheet.height = rows * (D.grid * S + 20);
-function redrawSheet() {
-sc.clearRect(0, 0, sheet.width, sheet.height);
-function drawSheet() {
-sc.clearRect(0, 0, sheet.width, sheet.height);
-sc.font = "12px system-ui";
-D.frames.forEach((fr, i) => {
-  const ox = (i % cols) * W + 4, oy = Math.floor(i / cols) * (D.grid * S + 20) + 16;
-  sc.fillStyle = "#888"; sc.fillText("#" + i, ox, oy - 4);
-  sc.strokeStyle = "#333"; sc.strokeRect(ox - 0.5, oy - 0.5, D.grid * S + 1, D.grid * S + 1);
-  drawFrame(sc, fr, S, ox, oy);
-});
-}
 drawSheet();
-}
-redrawSheet();
+requestAnimationFrame(loop);
 </script>
