@@ -1,6 +1,7 @@
 #include <unity.h>
 #include <string.h>
 #include <string>
+#include <ArduinoJson.h>
 #include "provision.h"
 #include "buddy_svg.h"
 #include "frames_data.h"
@@ -138,6 +139,169 @@ void test_buddy_svg_draws_the_idle_frame_in_slot_colours() {
   TEST_ASSERT_TRUE(svg.size() < 8000);
 }
 
+void test_store_remove() {
+  CredStore s;
+  s.add("a", "");
+  s.add("b", "");
+  s.add("c", "");
+  TEST_ASSERT_TRUE(s.remove("b"));
+  TEST_ASSERT_EQUAL(2, s.count());
+  TEST_ASSERT_EQUAL_STRING("c", s.at(0).ssid);
+  TEST_ASSERT_EQUAL_STRING("a", s.at(1).ssid);
+  TEST_ASSERT_FALSE(s.remove("zzz"));
+  TEST_ASSERT_TRUE(s.remove("c"));
+  TEST_ASSERT_TRUE(s.remove("a"));
+  TEST_ASSERT_EQUAL(0, s.count());
+}
+
+void test_parse_bits_reads_running_colour_and_ops() {
+  const char* j = R"({"seq":3,"running":false,"sessions":[],"messages":[],"config":{"colour":2},)"
+                  R"("wifi":[{"id":4,"op":"add","ssid":"iPhone","pass":"secret99"},{"id":5,"op":"delete","ssid":"old"},{"id":6,"op":"rename","ssid":"x"}]})";
+  LanyardBits b;
+  TEST_ASSERT_TRUE(parseLanyardBits(j, strlen(j), b));
+  TEST_ASSERT_FALSE(b.running);
+  TEST_ASSERT_EQUAL(2, b.colour);
+  TEST_ASSERT_EQUAL(3, b.opCount);
+  TEST_ASSERT_EQUAL_UINT32(4, b.ops[0].id);
+  TEST_ASSERT_EQUAL(OpKind::Add, b.ops[0].kind);
+  TEST_ASSERT_EQUAL_STRING("iPhone", b.ops[0].ssid);
+  TEST_ASSERT_EQUAL_STRING("secret99", b.ops[0].pass);
+  TEST_ASSERT_EQUAL(OpKind::Delete, b.ops[1].kind);
+  TEST_ASSERT_EQUAL_STRING("", b.ops[1].pass);
+  TEST_ASSERT_EQUAL(OpKind::Invalid, b.ops[2].kind);
+  TEST_ASSERT_EQUAL_STRING("invalid", opKindName(b.ops[2].kind));
+}
+
+void test_parse_bits_v1_response_defaults() {
+  const char* j = R"({"seq":1,"sessions":[],"messages":[]})";
+  LanyardBits b;
+  TEST_ASSERT_TRUE(parseLanyardBits(j, strlen(j), b));
+  TEST_ASSERT_TRUE(b.running);
+  TEST_ASSERT_EQUAL(-1, b.colour);
+  TEST_ASSERT_EQUAL(0, b.opCount);
+}
+
+void test_parse_bits_bad_json_and_bad_colour() {
+  LanyardBits b;
+  TEST_ASSERT_FALSE(parseLanyardBits("{nope", 5, b));
+  TEST_ASSERT_FALSE(parseLanyardBits("[1]", 3, b));
+  const char* j = R"({"config":{"colour":9}})";
+  TEST_ASSERT_TRUE(parseLanyardBits(j, strlen(j), b));
+  TEST_ASSERT_EQUAL(-1, b.colour);
+}
+
+void test_parse_bits_caps_ops() {
+  std::string j = R"({"wifi":[)";
+  for (int i = 1; i <= 10; i++) j += std::string(i > 1 ? "," : "") + R"({"id":)" + std::to_string(i) + R"(,"op":"delete","ssid":"n"})";
+  j += "]}";
+  LanyardBits b;
+  TEST_ASSERT_TRUE(parseLanyardBits(j.c_str(), j.size(), b));
+  TEST_ASSERT_EQUAL(MAX_OPS, b.opCount);
+  TEST_ASSERT_EQUAL_UINT32(8, b.ops[7].id);
+}
+
+void test_parse_bits_keeps_special_ssids_and_rejects_overlong() {
+  // 32 bytes of emoji, a quote and a backslash survive; 33 bytes make the op invalid.
+  const char* j = R"({"wifi":[{"id":1,"op":"add","ssid":"😀😀😀😀😀😀😀😀","pass":""},)"
+                  R"({"id":2,"op":"add","ssid":"Cafe \"5G\" \\ x","pass":"password1"},)"
+                  R"({"id":3,"op":"add","ssid":"123456789012345678901234567890123","pass":""}]})";
+  LanyardBits b;
+  TEST_ASSERT_TRUE(parseLanyardBits(j, strlen(j), b));
+  TEST_ASSERT_EQUAL_STRING("😀😀😀😀😀😀😀😀", b.ops[0].ssid);
+  TEST_ASSERT_EQUAL(OpKind::Add, b.ops[0].kind);
+  TEST_ASSERT_EQUAL_STRING("Cafe \"5G\" \\ x", b.ops[1].ssid);
+  TEST_ASSERT_EQUAL(OpKind::Invalid, b.ops[2].kind);
+}
+
+static WifiOp op(uint32_t id, OpKind k, const char* ssid, const char* pass = "") {
+  WifiOp o = {};
+  o.id = id;
+  o.kind = k;
+  strcpy(o.ssid, ssid);
+  strcpy(o.pass, pass);
+  return o;
+}
+
+void test_apply_ops_add_delete_and_applied() {
+  CredStore s;
+  s.add("home", "password1");
+  const WifiOp ops[] = {op(1, OpKind::Add, "phone", "password2"), op(2, OpKind::Delete, "home"), op(3, OpKind::Delete, "ghost")};
+  uint32_t applied = 0;
+  const OpsResult r = applyWifiOps(s, ops, 3, applied, "elsewhere");
+  TEST_ASSERT_TRUE(r.changed);
+  TEST_ASSERT_FALSE(r.currentRemoved);
+  TEST_ASSERT_EQUAL_UINT32(3, applied);
+  TEST_ASSERT_EQUAL(1, s.count());
+  TEST_ASSERT_EQUAL_STRING("phone", s.at(0).ssid);
+}
+
+void test_apply_ops_skips_already_applied_ids() {
+  CredStore s;
+  const WifiOp ops[] = {op(4, OpKind::Add, "a"), op(5, OpKind::Add, "b")};
+  uint32_t applied = 4;
+  applyWifiOps(s, ops, 2, applied, "");
+  TEST_ASSERT_EQUAL(1, s.count());
+  TEST_ASSERT_EQUAL_STRING("b", s.at(0).ssid);
+  TEST_ASSERT_EQUAL_UINT32(5, applied);
+  const OpsResult again = applyWifiOps(s, ops, 2, applied, "");
+  TEST_ASSERT_FALSE(again.changed);
+}
+
+void test_apply_ops_invalid_entry_counts_as_applied() {
+  CredStore s;
+  const WifiOp ops[] = {op(1, OpKind::Add, "net", "short"), op(2, OpKind::Invalid, "x"), op(3, OpKind::Add, "", "")};
+  uint32_t applied = 0;
+  const OpsResult r = applyWifiOps(s, ops, 3, applied, "");
+  TEST_ASSERT_FALSE(r.changed);
+  TEST_ASSERT_EQUAL(0, s.count());
+  TEST_ASSERT_EQUAL_UINT32(3, applied);
+}
+
+void test_apply_ops_deleting_current_network() {
+  CredStore s;
+  s.add("home", "password1");
+  s.add("phone", "password2");
+  const WifiOp ops[] = {op(1, OpKind::Delete, "phone")};
+  uint32_t applied = 0;
+  const OpsResult r = applyWifiOps(s, ops, 1, applied, "phone");
+  TEST_ASSERT_TRUE(r.currentRemoved);
+  TEST_ASSERT_EQUAL(1, s.count());
+}
+
+void test_apply_ops_fourth_add_drops_oldest_and_same_name_replaces() {
+  CredStore s;
+  s.add("a", "");
+  s.add("b", "");
+  s.add("c", "");
+  const WifiOp ops[] = {op(1, OpKind::Add, "d"), op(2, OpKind::Add, "c", "newpass99")};
+  uint32_t applied = 0;
+  applyWifiOps(s, ops, 2, applied, "");
+  TEST_ASSERT_EQUAL(3, s.count());
+  TEST_ASSERT_EQUAL_STRING("c", s.at(0).ssid);
+  TEST_ASSERT_EQUAL_STRING("newpass99", s.at(0).pass);
+  TEST_ASSERT_EQUAL_STRING("d", s.at(1).ssid);
+  TEST_ASSERT_EQUAL_STRING("b", s.at(2).ssid);
+}
+
+void test_report_json_shape() {
+  CredStore s;
+  s.add("home", "password1");
+  s.add("Cafe \"5G\"", "");
+  const std::string out = reportJson("home", s, 2, true, false, 81, 7);
+  TEST_ASSERT_EQUAL(std::string::npos, out.find("password1"));
+  JsonDocument d;
+  TEST_ASSERT_FALSE(deserializeJson(d, out));
+  TEST_ASSERT_EQUAL_STRING("home", d["wifi"]);
+  TEST_ASSERT_EQUAL(2, d["nets"].size());
+  TEST_ASSERT_EQUAL_STRING("Cafe \"5G\"", d["nets"][0]);
+  TEST_ASSERT_EQUAL_STRING("home", d["nets"][1]);
+  TEST_ASSERT_EQUAL(2, d["colour"].as<int>());
+  TEST_ASSERT_TRUE(d["battery"]["present"].as<bool>());
+  TEST_ASSERT_FALSE(d["battery"]["charging"].as<bool>());
+  TEST_ASSERT_EQUAL(81, d["battery"]["percent"].as<int>());
+  TEST_ASSERT_EQUAL_UINT32(7, d["applied"].as<uint32_t>());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_store_keeps_newest_first_dedupes_and_caps_at_3);
@@ -152,5 +316,17 @@ int main() {
   RUN_TEST(test_flow_failure_then_retry);
   RUN_TEST(test_flow_status_json);
   RUN_TEST(test_buddy_svg_draws_the_idle_frame_in_slot_colours);
+  RUN_TEST(test_store_remove);
+  RUN_TEST(test_parse_bits_reads_running_colour_and_ops);
+  RUN_TEST(test_parse_bits_v1_response_defaults);
+  RUN_TEST(test_parse_bits_bad_json_and_bad_colour);
+  RUN_TEST(test_parse_bits_caps_ops);
+  RUN_TEST(test_parse_bits_keeps_special_ssids_and_rejects_overlong);
+  RUN_TEST(test_apply_ops_add_delete_and_applied);
+  RUN_TEST(test_apply_ops_skips_already_applied_ids);
+  RUN_TEST(test_apply_ops_invalid_entry_counts_as_applied);
+  RUN_TEST(test_apply_ops_deleting_current_network);
+  RUN_TEST(test_apply_ops_fourth_add_drops_oldest_and_same_name_replaces);
+  RUN_TEST(test_report_json_shape);
   return UNITY_END();
 }

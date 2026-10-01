@@ -15,6 +15,7 @@ struct Cred {
 class CredStore {
  public:
   void add(const char* ssid, const char* pass);
+  bool remove(const char* ssid);  // true if it was there
   void clear() { n_ = 0; }
   int count() const { return n_; }
   const Cred& at(int i) const { return creds_[i]; }
@@ -55,3 +56,40 @@ class SetupFlow {
   SetupStep step_ = SetupStep::Join;
   char ssid_[33] = "";
 };
+
+// ---------- settings from the Mac's control page ----------
+// The Mac queues Wi-Fi changes with increasing ids and sends them in GET /state; we apply each id
+// once (the last applied id is kept in NVS) and say so in POST /lanyard.
+
+enum class OpKind : uint8_t { Add, Delete, Invalid };
+const char* opKindName(OpKind k);
+
+struct WifiOp {
+  uint32_t id;
+  OpKind kind;
+  char ssid[33];
+  char pass[64];
+};
+
+constexpr int MAX_OPS = 8;  // per poll; the rest arrive on the next one
+
+struct LanyardBits {
+  bool running = true;  // false: AgentFunnel is switched off on the Mac
+  int colour = -1;      // the first character colour 0-5, or -1 if absent
+  WifiOp ops[MAX_OPS] = {};
+  int opCount = 0;
+};
+
+// Reads running/config/wifi from a /state body (everything else is skipped). False on bad JSON.
+bool parseLanyardBits(const char* json, size_t len, LanyardBits& out);
+
+struct OpsResult {
+  bool changed = false;         // the saved networks changed (save them)
+  bool currentRemoved = false;  // the network we're on was deleted
+};
+// Applies ops with id > applied, in order, and moves `applied` past each one (invalid ones too).
+OpsResult applyWifiOps(CredStore& store, const WifiOp* ops, int n, uint32_t& applied, const char* currentSsid);
+
+// Body of POST /lanyard. Network names only, never passwords.
+std::string reportJson(const char* wifi, const CredStore& store, int colour, bool batteryPresent, bool charging,
+                       int percent, uint32_t applied);

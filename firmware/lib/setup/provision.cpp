@@ -21,6 +21,16 @@ void CredStore::add(const char* ssid, const char* pass) {
   n_ = keep + 1;
 }
 
+bool CredStore::remove(const char* ssid) {
+  for (int i = 0; i < n_; i++) {
+    if (strcmp(creds_[i].ssid, ssid) != 0) continue;
+    for (int j = i; j + 1 < n_; j++) creds_[j] = creds_[j + 1];
+    n_--;
+    return true;
+  }
+  return false;
+}
+
 std::string CredStore::serialize() const {
   JsonDocument doc;
   JsonArray a = doc.to<JsonArray>();
@@ -109,6 +119,85 @@ std::string SetupFlow::statusJson() const {
   JsonDocument doc;
   doc["step"] = setupStepName(step_);
   doc["ssid"] = ssid_;
+  std::string out;
+  serializeJson(doc, out);
+  return out;
+}
+
+// ---------- settings from the Mac's control page ----------
+
+static constexpr int COLOUR_COUNT = 6;
+
+const char* opKindName(OpKind k) {
+  return k == OpKind::Add ? "add" : k == OpKind::Delete ? "delete" : "invalid";
+}
+
+// Copies src into dst (size n); false if it doesn't fit (so a long name is never silently cut).
+static bool copyWhole(char* dst, const char* src, size_t n) {
+  if (strlen(src) >= n) {
+    dst[0] = 0;
+    return false;
+  }
+  strcpy(dst, src);
+  return true;
+}
+
+bool parseLanyardBits(const char* json, size_t len, LanyardBits& out) {
+  out = LanyardBits();
+  JsonDocument filter;
+  filter["running"] = true;
+  filter["config"]["colour"] = true;
+  JsonObject f = filter["wifi"].add<JsonObject>();
+  f["id"] = true;
+  f["op"] = true;
+  f["ssid"] = true;
+  f["pass"] = true;
+  JsonDocument doc;
+  if (deserializeJson(doc, json, len, DeserializationOption::Filter(filter)) || !doc.is<JsonObject>()) return false;
+  out.running = doc["running"] | true;
+  const int c = doc["config"]["colour"] | -1;
+  out.colour = c >= 0 && c < COLOUR_COUNT ? c : -1;
+  for (JsonObjectConst o : doc["wifi"].as<JsonArrayConst>()) {
+    if (out.opCount >= MAX_OPS) break;
+    WifiOp& w = out.ops[out.opCount++];
+    w.id = o["id"] | 0u;
+    const char* k = o["op"] | "";
+    w.kind = !strcmp(k, "add") ? OpKind::Add : !strcmp(k, "delete") ? OpKind::Delete : OpKind::Invalid;
+    const bool fits = copyWhole(w.ssid, o["ssid"] | "", sizeof w.ssid) & copyWhole(w.pass, o["pass"] | "", sizeof w.pass);
+    if (!fits) w.kind = OpKind::Invalid;
+  }
+  return true;
+}
+
+OpsResult applyWifiOps(CredStore& store, const WifiOp* ops, int n, uint32_t& applied, const char* currentSsid) {
+  OpsResult r;
+  for (int i = 0; i < n; i++) {
+    const WifiOp& o = ops[i];
+    if (o.id <= applied) continue;
+    applied = o.id;
+    if (o.kind == OpKind::Add && validateCreds(o.ssid, o.pass) == nullptr) {
+      store.add(o.ssid, o.pass);
+      r.changed = true;
+    } else if (o.kind == OpKind::Delete && *o.ssid && store.remove(o.ssid)) {
+      r.changed = true;
+      if (currentSsid && !strcmp(currentSsid, o.ssid)) r.currentRemoved = true;
+    }
+  }
+  return r;
+}
+
+std::string reportJson(const char* wifi, const CredStore& store, int colour, bool batteryPresent, bool charging,
+                       int percent, uint32_t applied) {
+  JsonDocument doc;
+  doc["wifi"] = wifi ? wifi : "";
+  JsonArray nets = doc["nets"].to<JsonArray>();
+  for (int i = 0; i < store.count(); i++) nets.add(store.at(i).ssid);
+  doc["colour"] = colour;
+  JsonObject b = doc["battery"].to<JsonObject>();
+  b["present"] = batteryPresent;
+  b["charging"] = charging;
+  b["percent"] = percent;
+  doc["applied"] = applied;
   std::string out;
   serializeJson(doc, out);
   return out;
