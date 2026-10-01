@@ -39,6 +39,6 @@ int stepSelection(int count, int cur, int dir, bool (*visible)(int i, void* ctx)
 // watch is always Claude orange (colour 0), the next blue, and so on.
 int colourRank(int i, bool (*visible)(int i, void* ctx), void* ctx);
 
-// Battery icon: 0-4 filled segments, and whether to show it as low.
-int batterySegments(int percent);
+// Battery icon: width of the charge fill inside an interior `width` px wide, and whether it's low.
+int batteryFillPx(int percent, int width);
 inline bool batteryLow(int percent) { return percent <= 15; }

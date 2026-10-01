@@ -130,18 +130,27 @@ static void drawMessages(const Session& s, uint8_t colourIdx) {
 
 // ---------- battery ----------
 
-// A small pixel battery at the bottom of the circle (rows below all art): grey case, 4 segments.
+// Pixel battery in the top-right, like a phone's status bar (clear of all art, inside the circle):
+// a grey case with the charge as a fill and the percentage in cream on top.
+static constexpr int BATT_X = 312, BATT_Y = 64, BATT_W = 46, BATT_H = 24;
 static void drawBattery() {
-  const int w = 30, h = 14, x = R - w / 2 - 2, y = 440;
-  gfx->fillRect(x - 2, y - 2, w + 10, h + 4, 0x0000);
+  gfx->fillRect(BATT_X - 2, BATT_Y - 2, BATT_W + 8, BATT_H + 4, 0x0000);
   if (!battery.present) return;
-  const uint16_t fill = battery.charging ? rgb565(0x6BBF59) : batteryLow(battery.percent) ? rgb565(0xE0709B) : CREAM;
-  gfx->drawRect(x, y, w, h, GREY);
-  gfx->drawRect(x + 1, y + 1, w - 2, h - 2, GREY);
-  gfx->fillRect(x + w, y + 4, 3, h - 8, GREY);
-  const int segs = batterySegments(battery.percent);
-  for (int i = 0; i < 4; i++)
-    gfx->fillRect(x + 3 + i * 6, y + 3, 5, h - 6, i < segs ? fill : 0x0000);
+  const uint16_t fill = battery.charging ? rgb565(0x4A8F3C) : batteryLow(battery.percent) ? rgb565(0xB04F76) : rgb565(0xB05A3F);
+  gfx->drawRect(BATT_X, BATT_Y, BATT_W, BATT_H, GREY);
+  gfx->drawRect(BATT_X + 1, BATT_Y + 1, BATT_W - 2, BATT_H - 2, GREY);
+  gfx->fillRect(BATT_X + BATT_W, BATT_Y + 7, 4, BATT_H - 14, GREY);
+  const int inner = BATT_W - 6;
+  const int px = batteryFillPx(battery.percent, inner);
+  gfx->fillRect(BATT_X + 3, BATT_Y + 3, px, BATT_H - 6, fill);
+  gfx->fillRect(BATT_X + 3 + px, BATT_Y + 3, inner - px, BATT_H - 6, 0x0000);
+  char num[5];
+  snprintf(num, sizeof num, "%d", battery.percent > 100 ? 100 : battery.percent);
+  const int scale = 2;  // even "100" (36 px) fits the 40 px interior
+  gfx->setTextSize(scale);
+  gfx->setTextColor(CREAM);
+  gfx->setCursor(BATT_X + (BATT_W - (int)strlen(num) * 6 * scale) / 2, BATT_Y + (BATT_H - 8 * scale) / 2);
+  gfx->print(num);
 }
 
 // ---------- first-time setup screens ----------
@@ -466,7 +475,7 @@ void loop() {
       batteryDirty = true;
     }
   }
-  if (batteryDirty && screen != Screen::Setup) {
+  if (batteryDirty && (screen == Screen::Main || screen == Screen::Disconnected)) {
     drawBattery();
     batteryDirty = false;
   }

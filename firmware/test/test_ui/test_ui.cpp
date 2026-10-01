@@ -122,14 +122,13 @@ void test_colour_rank_counts_visible_sessions_before() {
   TEST_ASSERT_EQUAL(0, colourRank(0, isVisible, nullptr));
 }
 
-void test_battery_segments() {
-  TEST_ASSERT_EQUAL(0, batterySegments(0));
-  TEST_ASSERT_EQUAL(1, batterySegments(1));
-  TEST_ASSERT_EQUAL(1, batterySegments(25));
-  TEST_ASSERT_EQUAL(2, batterySegments(26));
-  TEST_ASSERT_EQUAL(4, batterySegments(100));
-  TEST_ASSERT_EQUAL(4, batterySegments(130));
-  TEST_ASSERT_EQUAL(0, batterySegments(-5));
+void test_battery_fill_width() {
+  TEST_ASSERT_EQUAL(0, batteryFillPx(0, 40));
+  TEST_ASSERT_EQUAL(1, batteryFillPx(1, 40));  // any charge shows at least a sliver
+  TEST_ASSERT_EQUAL(20, batteryFillPx(50, 40));
+  TEST_ASSERT_EQUAL(40, batteryFillPx(100, 40));
+  TEST_ASSERT_EQUAL(40, batteryFillPx(130, 40));
+  TEST_ASSERT_EQUAL(0, batteryFillPx(-5, 40));
 }
 
 void test_battery_low() {
@@ -153,7 +152,7 @@ int main() {
   RUN_TEST(test_step_selection_with_nothing_visible);
   RUN_TEST(test_first_visible);
   RUN_TEST(test_colour_rank_counts_visible_sessions_before);
-  RUN_TEST(test_battery_segments);
+  RUN_TEST(test_battery_fill_width);
   RUN_TEST(test_battery_low);
   return UNITY_END();
 }

@@ -103,8 +103,9 @@ int colourRank(int i, bool (*visible)(int, void*), void* ctx) {
   return rank;
 }
 
-int batterySegments(int percent) {
+int batteryFillPx(int percent, int width) {
   if (percent <= 0) return 0;
-  if (percent >= 100) return 4;
-  return (percent + 24) / 25;
+  if (percent >= 100) return width;
+  const int px = percent * width / 100;
+  return px < 1 ? 1 : px;
 }
