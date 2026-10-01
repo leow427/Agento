@@ -1,28 +1,35 @@
-ARM_UP_Y, ARM_DOWN_Y = 10, 12
-LAPTOP_Y = 16
-
-# Smoke positions (top-left of each sprite), shared by every view and centred on the laptop.
+# Smoke positions (top-left of each sprite), shared by every view and centred on the desk.
 POOF_BIG_POS = (4, 16)
 POOF_M_POS = (7, 17)
 POOF_S_POS = (11, 19)
 POOF_PUFFS_POS = (3, 14)
 
-# A rig says where each part sits for one camera angle.
+# A rig says where each part sits for one camera angle and how he types.
+#   desk:    (sprite, x, y) drawn in front of his lower body
+#   arms:    (sprite, x) for his right arm, then his left arm
+#   arm_y:   (up, down) top row of an arm
+#   typing:  four coding steps of (left_down, right_down, cursor_visible, bounce)
 FRONT_RIG = {
     "body_x": 8,
     "idle_y": 9,       # body top while idle
-    "code_y": 8,       # body top while coding (the bounce goes UP so the face never meets the lid)
+    "code_y": 8,       # body top while coding
     "cursor": (7, 7),  # cursor offset from the body's top-left
-    "laptop_x": 6,
-    "arms": [("arm", 6), ("arm", 21)],  # (sprite, x) for his right arm, then his left arm
+    "desk": ("keyboard", 5, 18),
+    "arms": [("arm_tiny", 6), ("arm_tiny", 21)],
+    "arm_y": (15, 16),
+    # He pecks with one hand at a time and rests in between; the body stays still.
+    "typing": [(1, 0, 1, 0), (0, 0, 1, 0), (0, 1, 0, 0), (0, 0, 0, 0)],
 }
 THREEQ_RIG = {
     "body_x": 7,
     "idle_y": 8,
     "code_y": 7,
     "cursor": (5, 8),
-    "laptop_x": 7,
+    "desk": ("laptop", 7, 16),
     "arms": [("arm", 5), ("arm_side", 21)],
+    "arm_y": (10, 12),
+    # Alternating hands and a bounce: the original laptop typing.
+    "typing": [(1, 0, 1, 0), (0, 1, 1, 0), (1, 0, 0, 1), (0, 1, 0, 1)],
 }
 
 
@@ -37,14 +44,17 @@ def build(rig):
             layers.append(("cursor", rig["body_x"] + rig["cursor"][0], y + rig["cursor"][1]))
         return layers
 
-    def coding_pose(left_down, cursor, bounce):
+    def coding_pose(left_down, right_down, cursor, bounce):
         y = rig["code_y"] - (1 if bounce else 0)
         (arm_a, xa), (arm_b, xb) = rig["arms"]
+        up, down = rig["arm_y"]
         return (
             body(y, cursor)
-            + [(arm_a, xa, ARM_DOWN_Y if left_down else ARM_UP_Y), (arm_b, xb, ARM_UP_Y if left_down else ARM_DOWN_Y)]
-            + [("laptop", rig["laptop_x"], LAPTOP_Y)]
+            + [rig["desk"]]
+            + [(arm_a, xa, down if left_down else up), (arm_b, xb, down if right_down else up)]
         )
+
+    typing = rig["typing"]
 
     idle_y, code_y = rig["idle_y"], rig["code_y"]
     return {
@@ -63,18 +73,18 @@ def build(rig):
             "steps": [
                 _step(70, body(code_y, True) + [("poof_s", *POOF_S_POS)]),
                 _step(70, body(code_y, True) + [("poof_m", *POOF_M_POS)]),
-                _step(90, coding_pose(True, True, False) + [("poof_big", *POOF_BIG_POS)]),
-                _step(90, coding_pose(False, True, False) + [("poof_puffs", *POOF_PUFFS_POS)]),
+                _step(90, coding_pose(*typing[0]) + [("poof_big", *POOF_BIG_POS)]),
+                _step(90, coding_pose(*typing[1]) + [("poof_puffs", *POOF_PUFFS_POS)]),
             ],
             "loop": False,
             "next": "coding",
         },
         "coding": {
             "steps": [
-                _step(80, coding_pose(True, True, False)),
-                _step(80, coding_pose(False, True, False)),
-                _step(80, coding_pose(True, False, True)),
-                _step(80, coding_pose(False, False, True)),
+                _step(80, coding_pose(*typing[0])),
+                _step(80, coding_pose(*typing[1])),
+                _step(80, coding_pose(*typing[2])),
+                _step(80, coding_pose(*typing[3])),
             ],
             "loop": True,
             "hold_ms": 7000,
@@ -82,8 +92,8 @@ def build(rig):
         },
         "to_idle": {
             "steps": [
-                _step(90, coding_pose(True, True, False) + [("poof_puffs", *POOF_PUFFS_POS)]),
-                _step(90, coding_pose(False, True, False) + [("poof_big", *POOF_BIG_POS)]),
+                _step(90, coding_pose(*typing[0]) + [("poof_puffs", *POOF_PUFFS_POS)]),
+                _step(90, coding_pose(*typing[1]) + [("poof_big", *POOF_BIG_POS)]),
                 _step(70, body(idle_y, True) + [("poof_m", *POOF_M_POS)]),
                 _step(70, body(idle_y, True) + [("poof_s", *POOF_S_POS)]),
             ],
@@ -93,7 +103,7 @@ def build(rig):
     }
 
 
-# Smoke centred on his body (not the laptop) for appearing and leaving.
+# Smoke centred on his body (not the desk) for appearing and leaving.
 BODY_POOF_BIG = (4, 10)
 BODY_POOF_M = (7, 11)
 BODY_POOF_S = (11, 13)

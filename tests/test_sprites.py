@@ -1,7 +1,7 @@
 from art.palette import PALETTE, PALETTE_ORDER
 from art.sprites import SPRITES, SPRITES_3Q, ellipse, rect
 
-FRONT = ["body", "cursor", "arm", "laptop", "poof_s", "poof_m", "poof_big", "poof_puffs"]
+FRONT = ["body", "cursor", "arm_tiny", "keyboard", "poof_s", "poof_m", "poof_big", "poof_puffs"]
 THREEQ = ["body", "cursor", "arm", "arm_side", "laptop", "poof_s", "poof_m", "poof_big", "poof_puffs"]
 FILLED = "PL"  # cloud body and its grey underside
 
@@ -81,11 +81,27 @@ def test_helpers():
     assert ellipse(5, 3, "P") == [".PPP.", "PPPPP", ".PPP."]
 
 
-def test_laptop_is_tall_enough_to_read_as_a_laptop():
-    for table in (SPRITES, SPRITES_3Q):
-        laptop = table["laptop"]
-        assert len(laptop) >= 10, len(laptop)
-        assert len(laptop[0]) >= 12
+def test_three_quarter_laptop_is_tall_enough_to_read_as_a_laptop():
+    laptop = SPRITES_3Q["laptop"]
+    assert len(laptop) >= 10, len(laptop)
+    assert len(laptop[0]) >= 12
+
+
+def test_keyboard_has_separated_keycaps_a_spacebar_and_a_dark_base():
+    kb = SPRITES["keyboard"]
+    assert len(kb[0]) >= 17 and len(kb) >= 5
+    keyed = [i for i, row in enumerate(kb) if "L" in row]
+    assert len(keyed) >= 3, "needs at least two key rows and a spacebar"
+    for a, b in zip(kb, kb[1:]):
+        assert not ("L" in a and "L" in b), "key rows must be separated by a dark gap row (no checkerboard)"
+    assert any(set(row) == {"S"} for row in kb[keyed[0]:keyed[-1]]), "dark gap row between the keys"
+    longest = max(len(run) for row in kb for run in row.split("S"))
+    assert longest >= 10, "spacebar should be one long key"
+
+
+def test_arms_are_tiny_stubs():
+    arm = SPRITES["arm_tiny"]
+    assert len(arm) <= 3 and len(arm[0]) <= 2
 
 
 def test_big_cloud_is_solid_and_lumpy_not_a_ring():

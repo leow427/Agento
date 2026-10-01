@@ -56,16 +56,16 @@ BODY = [
     "..OO.....OO..",
 ]
 
-# 17x10 laptop seen from behind: slate lid (8 rows) with a cream logo, light-grey base (2 rows).
-LAPTOP = (
-    ["." + "S" * 15 + "."]
-    + ["S" * 17] * 2
-    + ["S" * 8 + "C" + "S" * 8]
-    + ["S" * 7 + "CCC" + "S" * 7]
-    + ["S" * 8 + "C" + "S" * 8]
-    + ["S" * 17] * 2
-    + ["L" * 17, "." + "L" * 15 + "."]
-)
+def _keyrow(offset):
+    """One row of 2-wide keycaps separated by single dark gaps; `offset` staggers the row."""
+    return "".join("L" if 1 <= x <= 17 and (x - 1 + offset) % 3 != 2 else "S" for x in range(19))
+
+
+# 19x6 keyboard: two rows of keycaps with dark gap rows between them, a spacebar, a dark base.
+KEYBOARD = [_keyrow(0), "S" * 19, _keyrow(1), "S" * 19, "SS" + "L" * 15 + "SS", "." + "S" * 17 + "."]
+
+# Tiny arm stub: two clay cells and a darker hand.
+ARM_TINY = ["OO", "OO", "DD"]
 
 SMOKE = {
     "poof_s": cloud(7, 5, [(0, 2, 4, 3), (2, 0, 4, 4), (4, 1, 3, 3), (1, 2, 5, 3)]),
@@ -117,8 +117,8 @@ SPRITES = dict(
         "slash": SLASH,
         "body": BODY,
         "cursor": ["KKK"],
-        "arm": ["OO", "OO", "OO", "DD"],
-        "laptop": LAPTOP,
+        "arm_tiny": ARM_TINY,
+        "keyboard": KEYBOARD,
     },
     **SMOKE
 )

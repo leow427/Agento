@@ -47,7 +47,7 @@ class Director {
   // Next animation to play when resting in `cur` but the state wants `want`.
   static uint8_t route(uint8_t cur, uint8_t want) {
     if (cur == ANIM_GONE) return ANIM_POOF_IN;      // lands on idle
-    if (cur == ANIM_CODING) return ANIM_TO_IDLE;    // always put the laptop away first
+    if (cur == ANIM_CODING) return ANIM_TO_IDLE;    // always put the keyboard away first
     if (want == ANIM_CODING) return ANIM_TO_CODING;
     if (want == ANIM_GONE) return ANIM_POOF_OUT;
     return want;                                    // idle <-> needs_you: straight cut

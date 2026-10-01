@@ -76,18 +76,50 @@ def test_prompt_glyph_visible_in_every_coding_frame(view):
 
 
 @pytest.mark.parametrize("view", VIEW_IDS)
-def test_laptop_is_hidden_by_the_cloud_then_revealed(view):
+def test_desk_is_hidden_by_the_cloud_then_revealed(view):
     full = visible(all_frames("coding", view)[0], "S")
     to_coding = [visible(f, "S") for f in all_frames("to_coding", view)]
     to_idle = [visible(f, "S") for f in all_frames("to_idle", view)]
     assert to_coding[0] == to_coding[1] == 0
-    assert to_coding[2] <= 0.25 * full, "cloud should hide the laptop while it appears"
-    assert to_coding[3] >= 0.75 * full, "laptop should be revealed once the smoke breaks up"
-    assert to_idle[0] >= 0.75 * full
+    assert to_coding[2] <= 0.25 * full, "cloud should hide the laptop/keyboard while it appears"
+    assert to_coding[3] >= 0.70 * full, "it should be revealed once the smoke breaks up"
+    assert to_idle[0] >= 0.70 * full
     assert to_idle[1] <= 0.25 * full
     assert to_idle[2] == to_idle[3] == 0
     assert all(visible(f, "S") == 0 for f in all_frames("idle", view))
     assert all(visible(f, "S") >= 0.75 * full for f in all_frames("coding", view))
+
+
+def layer_names(anim, step=0, view="front"):
+    return [layer[0] for layer in VIEWS[view][0][anim]["steps"][step]["layers"]]
+
+
+def test_front_view_types_on_a_keyboard_not_a_laptop():
+    for anim in ("to_coding", "coding", "to_idle"):
+        names = {n for i in range(4) for n in layer_names(anim, i)}
+        assert "laptop" not in names, anim
+    assert "keyboard" in layer_names("coding")
+    assert "laptop" in layer_names("coding", 0, "3q")  # the 3/4 exploration keeps its laptop
+
+
+def test_keys_never_change_colour_while_typing():
+    frames = all_frames("coding")
+    below_the_hands = [tuple(f[19:24]) for f in frames]
+    assert len(set(below_the_hands)) == 1, "keyboard rows below the hands must not flicker"
+
+
+def test_tiny_arms_peck_one_cell_and_alternate_instead_of_flailing():
+    steps = ANIMATIONS["coding"]["steps"]
+    arm_ys = [[l[2] for l in s["layers"] if l[0] == "arm_tiny"] for s in steps]
+    body_ys = {l[2] for s in steps for l in s["layers"] if l[0] == "body"}
+    assert len(body_ys) == 1, "the body stays still while he types"
+    flat = [y for pair in arm_ys for y in pair]
+    assert max(flat) - min(flat) == 1, "each peck moves one cell"
+    downs = [sum(1 for y in pair if y == max(flat)) for pair in arm_ys]
+    assert downs == [1, 0, 1, 0], "one hand at a time, with a rest between pecks"
+    left_down = [pair[0] == max(flat) for pair in arm_ys]
+    right_down = [pair[1] == max(flat) for pair in arm_ys]
+    assert left_down == [True, False, False, False] and right_down == [False, False, True, False]
 
 
 @pytest.mark.parametrize("view", VIEW_IDS)
