@@ -96,3 +96,15 @@ int stepSelection(int count, int cur, int dir, bool (*visible)(int, void*), void
   }
   return -1;
 }
+
+int colourRank(int i, bool (*visible)(int, void*), void* ctx) {
+  int rank = 0;
+  for (int k = 0; k < i; k++) rank += visible(k, ctx) ? 1 : 0;
+  return rank;
+}
+
+int batterySegments(int percent) {
+  if (percent <= 0) return 0;
+  if (percent >= 100) return 4;
+  return (percent + 24) / 25;
+}

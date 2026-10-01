@@ -113,6 +113,30 @@ void test_first_visible() {
   TEST_ASSERT_EQUAL(2, stepSelection(4, -1, +1, isVisible, nullptr));
 }
 
+void test_colour_rank_counts_visible_sessions_before() {
+  bool v[6] = {false, true, true, false, true, false};
+  memcpy(vis, v, sizeof vis);
+  TEST_ASSERT_EQUAL(0, colourRank(1, isVisible, nullptr));  // first visible is orange
+  TEST_ASSERT_EQUAL(1, colourRank(2, isVisible, nullptr));
+  TEST_ASSERT_EQUAL(2, colourRank(4, isVisible, nullptr));
+  TEST_ASSERT_EQUAL(0, colourRank(0, isVisible, nullptr));
+}
+
+void test_battery_segments() {
+  TEST_ASSERT_EQUAL(0, batterySegments(0));
+  TEST_ASSERT_EQUAL(1, batterySegments(1));
+  TEST_ASSERT_EQUAL(1, batterySegments(25));
+  TEST_ASSERT_EQUAL(2, batterySegments(26));
+  TEST_ASSERT_EQUAL(4, batterySegments(100));
+  TEST_ASSERT_EQUAL(4, batterySegments(130));
+  TEST_ASSERT_EQUAL(0, batterySegments(-5));
+}
+
+void test_battery_low() {
+  TEST_ASSERT_TRUE(batteryLow(15));
+  TEST_ASSERT_FALSE(batteryLow(16));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_swipes_by_dominant_axis);
@@ -128,5 +152,8 @@ int main() {
   RUN_TEST(test_step_selection_wraps_and_skips_hidden);
   RUN_TEST(test_step_selection_with_nothing_visible);
   RUN_TEST(test_first_visible);
+  RUN_TEST(test_colour_rank_counts_visible_sessions_before);
+  RUN_TEST(test_battery_segments);
+  RUN_TEST(test_battery_low);
   return UNITY_END();
 }

@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <TouchDrvCSTXXX.hpp>
+#include "battery.h"
 #include "board_pins.h"
 #include <qrcode.h>
 #include "director.h"
@@ -41,7 +42,9 @@ static char selectedId[ID_BYTES] = "";
 static bool redrawAll = true;
 
 static uint8_t shown[GRID * GRID];  // palette index on screen; 0 = black
-static int shownSlot = -1;
+static int shownSlot = -1, shownColour = -1;
+static bool batteryDirty = true;  // repaint the battery icon (after a clear or a new reading)
+static BatteryReading battery;
 
 // ---------- drawing ----------
 
@@ -64,6 +67,7 @@ static void drawFrame(uint16_t f, uint8_t slot) {
 
 static void clearScreen() {
   gfx->fillScreen(0x0000);
+  batteryDirty = true;
   memset(shown, 0, sizeof shown);
 }
 
@@ -90,11 +94,11 @@ static int widthAt(int k, void* ctx) {
 }
 
 // Messages page: project name on top, messages newest at the bottom, wrapped to the circle.
-static void drawMessages(const Session& s) {
+static void drawMessages(const Session& s, uint8_t colourIdx) {
   clearScreen();
-  const uint16_t colour = SLOT_BODY565[s.slot];
+  const uint16_t colour = SLOT_BODY565[colourIdx];
   drawCentred(s.project[0] ? s.project : "session", 34, colour);
-  gfx->drawFastHLine(R - 70, 56, 140, SLOT_SHADOW565[s.slot]);
+  gfx->drawFastHLine(R - 70, 56, 140, SLOT_SHADOW565[colourIdx]);
   const int lineH = 19, topLimit = 64;
   int bottom = LCD_HEIGHT - 36;
   if (s.msgCount == 0) {
@@ -122,6 +126,22 @@ static void drawMessages(const Session& s) {
     }
     bottom -= n * lineH + 8;
   }
+}
+
+// ---------- battery ----------
+
+// A small pixel battery at the bottom of the circle (rows below all art): grey case, 4 segments.
+static void drawBattery() {
+  const int w = 30, h = 14, x = R - w / 2 - 2, y = 440;
+  gfx->fillRect(x - 2, y - 2, w + 10, h + 4, 0x0000);
+  if (!battery.present) return;
+  const uint16_t fill = battery.charging ? rgb565(0x6BBF59) : batteryLow(battery.percent) ? rgb565(0xE0709B) : CREAM;
+  gfx->drawRect(x, y, w, h, GREY);
+  gfx->drawRect(x + 1, y + 1, w - 2, h - 2, GREY);
+  gfx->fillRect(x + w, y + 4, 3, h - 8, GREY);
+  const int segs = batterySegments(battery.percent);
+  for (int i = 0; i < 4; i++)
+    gfx->fillRect(x + 3 + i * 6, y + 3, 5, h - 6, i < segs ? fill : 0x0000);
 }
 
 // ---------- first-time setup screens ----------
@@ -219,7 +239,9 @@ static void select(int i) {
   const char* id = i >= 0 ? model.at(i).id : "";
   if (strcmp(id, selectedId) == 0) return;
   strlcpy(selectedId, id, sizeof selectedId);
-  if (i >= 0) Serial.printf("select session %s slot %u (%s)\n", model.at(i).project, model.at(i).slot, stateName(model.at(i).state));
+  if (i >= 0)
+    Serial.printf("select session %s slot %u colour %d (%s)\n", model.at(i).project, model.at(i).slot,
+                  colourRank(i, visibleAt, nullptr) % SLOT_COUNT, stateName(model.at(i).state));
   else Serial.println("select none: showing idle buddy");
   redrawAll = true;
 }
@@ -311,6 +333,12 @@ void setup() {
   clearScreen();
   Serial.println("display ready");
   initTouch();
+  if (batteryBegin()) {
+    battery = batteryRead();
+    Serial.printf("battery ready: %s %d%%%s\n", battery.present ? "present" : "absent", battery.percent, battery.charging ? " charging" : "");
+  } else {
+    Serial.println("battery: PMIC not found");
+  }
   const uint32_t now = millis();
   nobody.appear(SState::YourTurn, now);
   for (Director& d : directors) d.appear(SState::Ended, now);
@@ -407,29 +435,47 @@ void loop() {
       const Session& s = model.at(sel);
       const uint32_t newest = s.msgCount ? s.msg(s.msgCount - 1).seq : 0;
       if (redrawAll || newest != shownMsgSeq) {
-        drawMessages(s);
+        drawMessages(s, colourRank(sel, visibleAt, nullptr) % SLOT_COUNT);
         shownMsgSeq = newest;
       }
       break;
     }
     case Screen::Main: {
+      // Directors are per slot; colours go by order on the watch (first one is always orange).
       const uint8_t slot = sel >= 0 ? model.at(sel).slot : 0;
-      if (redrawAll || shownSlot != slot) {
+      const uint8_t colour = sel >= 0 ? colourRank(sel, visibleAt, nullptr) % SLOT_COUNT : 0;
+      if (redrawAll || shownSlot != slot || shownColour != colour) {
         clearScreen();
-        if (sel >= 0) drawCentred(model.at(sel).project, NAME_Y, SLOT_BODY565[slot]);
+        if (sel >= 0) drawCentred(model.at(sel).project, NAME_Y, SLOT_BODY565[colour]);
         shownSlot = slot;
+        shownColour = colour;
       }
-      drawFrame(sel >= 0 ? frames[slot] : nobodyFrame, slot);
+      drawFrame(sel >= 0 ? frames[slot] : nobodyFrame, colour);
       break;
     }
   }
   redrawAll = false;
 
+  static uint32_t lastBattery = 0;
+  if (now - lastBattery >= 30000) {
+    lastBattery = now;
+    const BatteryReading b = batteryRead();
+    if (b.present != battery.present || b.charging != battery.charging || b.percent != battery.percent) {
+      Serial.printf("battery: %s %d%%%s\n", b.present ? "present" : "absent", b.percent, b.charging ? " charging" : "");
+      battery = b;
+      batteryDirty = true;
+    }
+  }
+  if (batteryDirty && screen != Screen::Setup) {
+    drawBattery();
+    batteryDirty = false;
+  }
+
   static uint32_t lastStatus = 0;
   if (now - lastStatus >= 5000) {
     lastStatus = now;
-    Serial.printf("status: screen=%s sessions=%d seq=%lu selected=%s link=%s touch=%s heap=%lu\n", screenName(screen),
+    Serial.printf("status: screen=%s sessions=%d seq=%lu selected=%s link=%s touch=%s batt=%d%% heap=%lu\n", screenName(screen),
                   model.count(), (unsigned long)model.seq(), sel >= 0 ? model.at(sel).project : "-",
-                  netDisconnected() ? "down" : "up", touchOk ? "ok" : "none", (unsigned long)ESP.getFreeHeap());
+                  netDisconnected() ? "down" : "up", touchOk ? "ok" : "none", battery.percent, (unsigned long)ESP.getFreeHeap());
   }
 }

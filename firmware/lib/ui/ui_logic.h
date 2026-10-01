@@ -34,3 +34,11 @@ int charsAcross(int top, int lineH, int charW, int r, int margin);
 
 // Next visible index after `cur` in direction dir (+1/-1), wrapping; -1 if none. cur may be -1.
 int stepSelection(int count, int cur, int dir, bool (*visible)(int i, void* ctx), void* ctx);
+
+// Colour for the session at index i: its rank among visible sessions, so the first one on the
+// watch is always Claude orange (colour 0), the next blue, and so on.
+int colourRank(int i, bool (*visible)(int i, void* ctx), void* ctx);
+
+// Battery icon: 0-4 filled segments, and whether to show it as low.
+int batterySegments(int percent);
+inline bool batteryLow(int percent) { return percent <= 15; }
