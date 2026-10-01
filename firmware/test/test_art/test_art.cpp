@@ -89,8 +89,24 @@ void test_slot_colour_swaps_only_body_and_shadow() {
   TEST_ASSERT_EQUAL_HEX16(PALETTE565[P_BODY], slotColour(P_BODY, 200));  // out of range -> slot 0
 }
 
+void test_colour_order_starts_with_the_chosen_colour() {
+  const uint8_t green[SLOT_COUNT] = {2, 0, 1, 3, 4, 5};
+  for (int r = 0; r < SLOT_COUNT; r++) TEST_ASSERT_EQUAL_UINT8(r, colourOrder(0, r));
+  for (int r = 0; r < SLOT_COUNT; r++) TEST_ASSERT_EQUAL_UINT8(green[r], colourOrder(2, r));
+  TEST_ASSERT_EQUAL_UINT8(5, colourOrder(5, 0));
+  TEST_ASSERT_EQUAL_UINT8(4, colourOrder(5, 5));
+  TEST_ASSERT_EQUAL_UINT8(2, colourOrder(2, 6));   // wraps after six
+  TEST_ASSERT_EQUAL_UINT8(0, colourOrder(9, 0));   // out of range -> orange
+  for (int first = 0; first < SLOT_COUNT; first++) {  // every colour exactly once
+    int seen = 0;
+    for (int r = 0; r < SLOT_COUNT; r++) seen |= 1 << colourOrder(first, r);
+    TEST_ASSERT_EQUAL(0x3F, seen);
+  }
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_colour_order_starts_with_the_chosen_colour);
   RUN_TEST(test_every_frame_stays_inside_the_circle);
   RUN_TEST(test_needs_you_loops_and_the_bang_blinks);
   RUN_TEST(test_poof_in_appears_from_smoke_then_idles);

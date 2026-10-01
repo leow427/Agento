@@ -35,8 +35,8 @@ int charsAcross(int top, int lineH, int charW, int r, int margin);
 // Next visible index after `cur` in direction dir (+1/-1), wrapping; -1 if none. cur may be -1.
 int stepSelection(int count, int cur, int dir, bool (*visible)(int i, void* ctx), void* ctx);
 
-// Colour for the session at index i: its rank among visible sessions, so the first one on the
-// watch is always Claude orange (colour 0), the next blue, and so on.
+// Rank of the session at index i among visible sessions (0 = first on the lanyard). colourOrder()
+// in slots.h turns the rank into a colour.
 int colourRank(int i, bool (*visible)(int i, void* ctx), void* ctx);
 
 // Battery icon: width of the charge fill inside an interior `width` px wide, and whether it's low.

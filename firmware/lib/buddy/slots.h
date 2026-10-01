@@ -32,3 +32,12 @@ inline uint16_t slotColour(uint8_t paletteIndex, uint8_t slot) {
   if (paletteIndex == 2) return SLOT_SHADOW565[slot];
   return PALETTE565[paletteIndex];
 }
+
+// Colour for the session at visible rank `rank` when `first` is the chosen first colour (set on
+// the Mac's page): `first`, then the other five in their usual order.
+inline uint8_t colourOrder(uint8_t first, int rank) {
+  if (first >= SLOT_COUNT) first = 0;
+  const int r = rank % SLOT_COUNT;
+  if (r == 0) return first;
+  return (uint8_t)(r - 1 < first ? r - 1 : r);
+}
