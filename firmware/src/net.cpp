@@ -10,6 +10,7 @@
 #include "frames_data.h"
 #include "link.h"
 #include "provision.h"
+#include "slots.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -30,6 +31,13 @@ static bool mailFull = false;
 static std::atomic<uint32_t> since{0};  // 0 on boot: the Mac sends its full history
 static std::atomic<bool> down{true};
 static std::atomic<bool> setupRequested{false};
+static std::atomic<uint8_t> firstColour{0};
+static std::atomic<bool> stopped{false};  // AgentFunnel is switched off on the Mac
+static uint32_t applied = 0;              // last Wi-Fi change from the Mac we applied (NVS "applied")
+static BatteryReading batteryNow;         // guarded by `lock`
+static bool needRejoin = false, needSetup = false;
+static String lastReport;
+static uint32_t lastReportAt = 0;
 
 static CredStore store;
 static SetupFlow flow;
@@ -48,6 +56,13 @@ bool netTake(String& body) {
 void netSetSince(uint32_t seq) { since = seq; }
 bool netDisconnected() { return down; }
 void netRequestSetup() { setupRequested = true; }
+uint8_t netFirstColour() { return firstColour; }
+
+void netSetBattery(const BatteryReading& b) {
+  xSemaphoreTake(lock, portMAX_DELAY);
+  batteryNow = b;
+  xSemaphoreGive(lock);
+}
 
 void netSetupView(SetupView& out) {
   xSemaphoreTake(lock, portMAX_DELAY);
@@ -69,6 +84,9 @@ static void loadStore() {
   Preferences p;
   p.begin("buddy", true);
   const String text = p.getString("nets", "");
+  const uint8_t c = p.getUChar("colour", 0);
+  firstColour = c < SLOT_COUNT ? c : 0;
+  applied = p.getUInt("applied", 0);
   p.end();
   if (!store.deserialize(text.c_str())) Serial.println("wifi: saved networks unreadable; starting fresh");
   Serial.printf("wifi: %d saved network(s)%s\n", store.count(), *WIFI_SSID ? " + secrets.h" : "");
@@ -78,6 +96,20 @@ static void saveStore() {
   Preferences p;
   p.begin("buddy", false);
   p.putString("nets", store.serialize().c_str());
+  p.end();
+}
+
+static void saveColour(uint8_t c) {
+  Preferences p;
+  p.begin("buddy", false);
+  p.putUChar("colour", c);
+  p.end();
+}
+
+static void saveApplied(uint32_t a) {
+  Preferences p;
+  p.begin("buddy", false);
+  p.putUInt("applied", a);
   p.end();
 }
 
@@ -266,11 +298,32 @@ static bool resolve() {
 #endif
 }
 
+// Settings from the Mac's page, carried in every /state response.
+static void applyBits(const LanyardBits& b) {
+  if (b.colour >= 0 && b.colour != firstColour) {
+    firstColour = b.colour;
+    saveColour(b.colour);
+    Serial.printf("config: colour %d\n", b.colour);
+  }
+  for (int i = 0; i < b.opCount; i++)
+    if (b.ops[i].id > applied)
+      Serial.printf("wifi op %lu: %s %s\n", (unsigned long)b.ops[i].id, opKindName(b.ops[i].kind), b.ops[i].ssid);
+  const uint32_t before = applied;
+  const String current = WiFi.SSID();
+  const OpsResult r = applyWifiOps(store, b.ops, b.opCount, applied, current.c_str());
+  if (r.changed) saveStore();
+  if (applied != before) saveApplied(applied);
+  if (r.currentRemoved) {
+    if (candidateCount() == 0) needSetup = true;
+    else needRejoin = true;
+  }
+}
+
 static bool poll() {
   HTTPClient http;
   http.setConnectTimeout(900);
   http.setTimeout(900);
-  const String url = "http://" + host + ":" + port + "/state?since=" + String((uint32_t)since);
+  const String url = "http://" + host + ":" + port + "/state?lanyard=1&since=" + String((uint32_t)since);
   if (!http.begin(url)) return false;
   const int code = http.GET();
   if (code != 200) {
@@ -280,11 +333,42 @@ static bool poll() {
   }
   String body = http.getString();
   http.end();
+  static LanyardBits bits;  // ~800 bytes: keep it off the task stack
+  if (parseLanyardBits(body.c_str(), body.length(), bits)) {
+    applyBits(bits);
+    if (bits.running == stopped) Serial.println(bits.running ? "agentfunnel switched on" : "agentfunnel switched off on the Mac");
+    stopped = !bits.running;
+    if (!bits.running) return true;  // keep the sessions as they were; the screen shows disconnected
+  }
   xSemaphoreTake(lock, portMAX_DELAY);
   mailbox = std::move(body);  // an unapplied older body is superseded: `since` hasn't moved
   mailFull = true;
   xSemaphoreGive(lock);
   return true;
+}
+
+// POST /lanyard: sent after connecting, whenever it changes, and at least every 30 s.
+static void sendReport() {
+  BatteryReading b;
+  xSemaphoreTake(lock, portMAX_DELAY);
+  b = batteryNow;
+  xSemaphoreGive(lock);
+  const String body = reportJson(WiFi.SSID().c_str(), store, firstColour, b.present, b.charging, b.percent, applied).c_str();
+  if (body == lastReport && millis() - lastReportAt < 30000) return;
+  HTTPClient http;
+  http.setConnectTimeout(900);
+  http.setTimeout(900);
+  if (!http.begin("http://" + host + ":" + port + "/lanyard")) return;
+  http.addHeader("content-type", "application/json");
+  const int code = http.POST(body);
+  http.end();
+  if (code != 204) {
+    Serial.printf("report failed (%d)\n", code);
+    return;
+  }
+  lastReport = body;
+  lastReportAt = millis();
+  Serial.println("report sent");
 }
 
 static void netTask(void*) {
@@ -355,6 +439,7 @@ static void netTask(void*) {
     }
     if (up && !haveHost && (int32_t)(now - nextResolve) >= 0) {
       haveHost = resolve();
+      if (haveHost) lastReport = String();  // report right after (re)connecting
       nextResolve = now + 5000;
     }
     if (up && haveHost && (int32_t)(now - nextPoll) >= 0) {
@@ -364,6 +449,7 @@ static void netTask(void*) {
         everPolled = true;
         fails = 0;
         link.pollOk();
+        sendReport();
       } else {
         link.pollFailed();
         if (++fails == Link::MAX_FAILS) {
@@ -372,7 +458,19 @@ static void netTask(void*) {
         }
       }
     }
-    down = link.disconnected();
+    if (needSetup) {
+      needSetup = false;
+      Serial.println("wifi: the Mac deleted the last network; starting setup");
+      MDNS.end();
+      startSetup();
+      continue;
+    }
+    if (needRejoin) {
+      needRejoin = false;
+      Serial.println("wifi: the Mac deleted the network we're on; joining another");
+      WiFi.disconnect();
+    }
+    down = link.disconnected() || stopped;
     vTaskDelay(pdMS_TO_TICKS(20));
   }
 }

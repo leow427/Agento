@@ -28,7 +28,7 @@ static volatile bool touchIrq = false;
 
 static Model model;
 static Director directors[MAX_SESSIONS];  // indexed by slot
-static Director nobody;                    // the orange idle shown when there are no sessions
+static Director nobody;                    // the idle buddy shown when there are no sessions (first colour)
 static Player disconnectedPlayer;
 static SwipeDetector swipes;
 
@@ -250,7 +250,7 @@ static void select(int i) {
   strlcpy(selectedId, id, sizeof selectedId);
   if (i >= 0)
     Serial.printf("select session %s slot %u colour %d (%s)\n", model.at(i).project, model.at(i).slot,
-                  colourRank(i, visibleAt, nullptr) % SLOT_COUNT, stateName(model.at(i).state));
+                  colourOrder(netFirstColour(), colourRank(i, visibleAt, nullptr)), stateName(model.at(i).state));
   else Serial.println("select none: showing idle buddy");
   redrawAll = true;
 }
@@ -354,6 +354,7 @@ void setup() {
   disconnectedPlayer.setLoopForever(true);
   disconnectedPlayer.play(ANIM_DISCONNECTED, now);
   netStart();
+  netSetBattery(battery);
 }
 
 void loop() {
@@ -444,15 +445,16 @@ void loop() {
       const Session& s = model.at(sel);
       const uint32_t newest = s.msgCount ? s.msg(s.msgCount - 1).seq : 0;
       if (redrawAll || newest != shownMsgSeq) {
-        drawMessages(s, colourRank(sel, visibleAt, nullptr) % SLOT_COUNT);
+        drawMessages(s, colourOrder(netFirstColour(), colourRank(sel, visibleAt, nullptr)));
         shownMsgSeq = newest;
       }
       break;
     }
     case Screen::Main: {
-      // Directors are per slot; colours go by order on the watch (first one is always orange).
+      // Directors are per slot; colours go by order on the lanyard, starting from the colour
+      // picked on the Mac's page (the idle buddy uses that first colour too).
       const uint8_t slot = sel >= 0 ? model.at(sel).slot : 0;
-      const uint8_t colour = sel >= 0 ? colourRank(sel, visibleAt, nullptr) % SLOT_COUNT : 0;
+      const uint8_t colour = colourOrder(netFirstColour(), sel >= 0 ? colourRank(sel, visibleAt, nullptr) : 0);
       if (redrawAll || shownSlot != slot || shownColour != colour) {
         clearScreen();
         if (sel >= 0) drawCentred(model.at(sel).project, NAME_Y, SLOT_BODY565[colour]);
@@ -472,6 +474,7 @@ void loop() {
     if (b.present != battery.present || b.charging != battery.charging || b.percent != battery.percent) {
       Serial.printf("battery: %s %d%%%s\n", b.present ? "present" : "absent", b.percent, b.charging ? " charging" : "");
       battery = b;
+      netSetBattery(b);
       batteryDirty = true;
     }
   }
