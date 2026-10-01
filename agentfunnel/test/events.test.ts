@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { interpret, clip } from "../src/events.ts";
 
-const base = { session_id: "s1", cwd: "/path/to/Agento", transcript_path: "/x.jsonl" };
+const base = { session_id: "s1", cwd: "/x/Agento", transcript_path: "/x.jsonl" };
 
 function pre(tool_name: string, tool_input: Record<string, unknown>) {
   return interpret({ ...base, hook_event_name: "PreToolUse", tool_name, tool_input });

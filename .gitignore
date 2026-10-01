@@ -5,3 +5,15 @@ __pycache__/
 .DS_Store
 .superpowers/
 firmware/src/secrets.h
+
+# Local-only: AI tooling, agent instructions, plans/specs and other working notes.
+# Keep the published repo to source, tests and what's needed to build and run.
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+.superpowers/
+docs/
+notes/
+scratch/
+*.local.md
