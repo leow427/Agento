@@ -4,11 +4,16 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import { Config } from "./config.ts";
 import { MAX_BODY, readBody, send } from "./http.ts";
 import { Lanyard, parseReport } from "./lanyard.ts";
 import type { Report } from "./lanyard.ts";
+import { isPanelPath, servePanel } from "./panel.ts";
+import type { PanelCtx } from "./panel.ts";
 import type { Store } from "./store.ts";
+import { TailscaleCheck } from "./tailscale.ts";
+import type { TsStatus } from "./tailscale.ts";
 
 export { MAX_BODY };
 export const SERVICE_TYPE = "_agentfunnel._tcp";
@@ -22,15 +27,19 @@ export type ServerOptions = {
   host?: string;
   bonjour?: boolean;
   log?: (msg: string) => void;
+  tailscale?: { status(): Promise<TsStatus> };
+  uiDir?: string;
+  framesPath?: string;
 };
 
 export type Running = { port: number; close: () => Promise<void> };
 
-type Ctx = { store: Store; config: Config; lanyard: Lanyard; log: (m: string) => void };
+type Ctx = { store: Store; config: Config; lanyard: Lanyard; log: (m: string) => void; panel: PanelCtx };
 
 async function handle(ctx: Ctx, req: IncomingMessage, res: ServerResponse) {
   const { store, config, lanyard, log } = ctx;
   const url = new URL(req.url ?? "/", "http://x");
+  if (isPanelPath(url.pathname)) return servePanel(ctx.panel, req, res, url);
   if (req.method === "POST" && url.pathname === "/event") {
     const body = await readBody(req);
     if (body === null) return send(res, 413, "too large");
@@ -74,7 +83,18 @@ async function handle(ctx: Ctx, req: IncomingMessage, res: ServerResponse) {
 
 export function startServer(opts: ServerOptions): Promise<Running> {
   const log = opts.log ?? (() => {});
-  const ctx: Ctx = { store: opts.store, config: opts.config ?? new Config(), lanyard: opts.lanyard ?? new Lanyard(), log };
+  const config = opts.config ?? new Config();
+  const lanyard = opts.lanyard ?? new Lanyard();
+  const panel: PanelCtx = {
+    store: opts.store,
+    config,
+    lanyard,
+    tailscale: opts.tailscale ?? new TailscaleCheck(),
+    port: 0, // filled in once listening
+    uiDir: opts.uiDir ?? fileURLToPath(new URL("../ui/", import.meta.url)),
+    framesPath: opts.framesPath ?? fileURLToPath(new URL("../../preview/data.js", import.meta.url)),
+  };
+  const ctx: Ctx = { store: opts.store, config, lanyard, log, panel };
   const server = createServer((req, res) => {
     handle(ctx, req, res).catch((e) => {
       log(`request failed: ${e}`);
@@ -86,6 +106,7 @@ export function startServer(opts: ServerOptions): Promise<Running> {
     server.listen(opts.port, opts.host ?? "0.0.0.0", () => {
       server.off("error", reject);
       const port = (server.address() as AddressInfo).port;
+      panel.port = port;
       let dnsSd: ChildProcess | null = null;
       if (opts.bonjour !== false) {
         dnsSd = spawn("dns-sd", ["-R", "AgentFunnel", SERVICE_TYPE, "local", String(port)], { stdio: "ignore" });
