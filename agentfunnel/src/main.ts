@@ -1,21 +1,26 @@
-// Starts AgentFunnel: node src/main.ts [--port 8765] [--state PATH] [--no-bonjour]
+// Starts AgentFunnel: node src/main.ts [--port 41917] [--state PATH] [--config PATH] [--log PATH] [--no-bonjour]
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { makeLogger } from "./log.ts";
 import { Store } from "./store.ts";
-import { startServer } from "./server.ts";
+import { DEFAULT_PORT, startServer } from "./server.ts";
 
+process.title = "AgentFunnel";
+const dir = join(homedir(), ".agentfunnel");
 const { values } = parseArgs({
   options: {
-    port: { type: "string", default: "8765" },
-    state: { type: "string", default: join(homedir(), ".agentfunnel", "state.json") },
+    port: { type: "string", default: String(DEFAULT_PORT) },
+    state: { type: "string", default: join(dir, "state.json") },
+    config: { type: "string", default: join(dir, "config.json") },
+    log: { type: "string" },
     "no-bonjour": { type: "boolean", default: false },
   },
 });
 
 const port = Number(values.port);
-const log = (m: string) => console.log(`${new Date().toISOString()} ${m}`);
-const store = new Store({ path: values.state, log: (m) => console.warn(m) });
+const log = makeLogger(values.log);
+const store = new Store({ path: values.state, log });
 store.load();
 
 try {

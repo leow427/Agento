@@ -1,7 +1,7 @@
 // Claude Code hook: stdin JSON + sent_at -> POST /event. No other logic. Always exits 0, within ~1 s.
 import { request } from "node:http";
 
-const URL_ = process.env.AGENTFUNNEL_URL ?? "http://127.0.0.1:8765/event";
+const URL_ = process.env.AGENTFUNNEL_URL ?? "http://127.0.0.1:41917/event";
 const TIMEOUT_MS = 1000;
 
 const done = () => process.exit(0);

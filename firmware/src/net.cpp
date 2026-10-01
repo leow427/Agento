@@ -19,7 +19,7 @@
 #define WIFI_PASS ""
 #endif
 
-static constexpr uint16_t DEFAULT_PORT = 8765;
+static constexpr uint16_t DEFAULT_PORT = 41917;
 static constexpr uint32_t POLL_MS = 1000;
 static constexpr uint32_t JOIN_MS = 10000;  // how long one join attempt may take
 static constexpr int ROUNDS_BEFORE_SETUP = 2;  // full passes over the saved networks before asking for new ones

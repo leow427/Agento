@@ -72,3 +72,30 @@ test("main exits 0 on SIGTERM", async () => {
   const code = await new Promise((r) => m.p.on("exit", (c) => r(c)));
   assert.equal(code, 0);
 });
+
+import { readFileSync as readText, existsSync as exists } from "node:fs";
+import { DEFAULT_PORT } from "../src/server.ts";
+
+test("the default port is 41917, for main and for the hook", () => {
+  assert.equal(DEFAULT_PORT, 41917);
+  assert.match(readText(SRC + "main.ts", "utf8"), /String\(DEFAULT_PORT\)/);
+  assert.match(readText(SRC + "hook.ts", "utf8"), /http:\/\/127\.0\.0\.1:41917\/event/);
+});
+
+test("main --log writes its lines to that file instead of stdout", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "af-"));
+  const logPath = join(dir, "af.log");
+  const port = await freePort();
+  const p = spawn(process.execPath, ["--no-warnings", SRC + "main.ts", "--port", String(port), "--state", join(dir, "s.json"),
+    "--config", join(dir, "c.json"), "--log", logPath, "--no-bonjour"]);
+  let stdout = "";
+  p.stdout.on("data", (d) => (stdout += d));
+  try {
+    for (let i = 0; i < 50 && !(exists(logPath) && readText(logPath, "utf8").includes("listening")); i++)
+      await new Promise((r) => setTimeout(r, 100));
+    assert.match(readText(logPath, "utf8"), /agentfunnel listening on 0\.0\.0\.0:\d+/);
+    assert.equal(stdout, "");
+  } finally {
+    p.kill("SIGTERM");
+  }
+});

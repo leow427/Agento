@@ -8,6 +8,7 @@ import type { Store } from "./store.ts";
 
 export const MAX_BODY = 16 * 1024 * 1024;
 export const SERVICE_TYPE = "_agentfunnel._tcp";
+export const DEFAULT_PORT = 41917; // 8765 is Ultraseek's, AnkiConnect's and the websockets examples'
 
 export type ServerOptions = {
   store: Store;
