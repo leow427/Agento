@@ -41,7 +41,7 @@ const FILES = new Map<string, [string, string]>([
 ]);
 
 export function checkLocal(c: LocalCheck): string | null {
-  if (!LOOPBACK.has(c.remote ?? "")) return "this page only opens on the Mac running AgentFunnel";
+  if (!LOOPBACK.has(c.remote ?? "")) return "this page only opens on the Mac running Agento";
   const host = (c.host ?? "").toLowerCase();
   if (![`localhost:${c.port}`, `127.0.0.1:${c.port}`, `[::1]:${c.port}`].includes(host)) return "unexpected Host";
   if (c.origin !== undefined && c.origin.toLowerCase() !== `http://${host}`) return "unexpected Origin";

@@ -1,4 +1,4 @@
-// Starts AgentFunnel: node src/main.ts [--port 41917] [--state PATH] [--config PATH] [--log PATH] [--no-bonjour]
+// Starts Agento (the AgentFunnel service): node src/main.ts [--port 41917] [--state PATH] [--config PATH] [--log PATH] [--no-bonjour]
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -8,7 +8,7 @@ import { makeLogger } from "./log.ts";
 import { Store } from "./store.ts";
 import { DEFAULT_PORT, startServer } from "./server.ts";
 
-process.title = "AgentFunnel";
+process.title = "Agento";
 const dir = join(homedir(), ".agentfunnel");
 const { values } = parseArgs({
   options: {
@@ -35,7 +35,7 @@ try {
   log(`agentfunnel listening on 0.0.0.0:${running.port} (state ${values.state})`);
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") {
-    console.error(`agentfunnel: port ${port} already in use (is another AgentFunnel running?)`);
+    console.error(`agentfunnel: port ${port} already in use (is another Agento running?)`);
   } else {
     console.error(`agentfunnel: ${(e as Error).message}`);
   }

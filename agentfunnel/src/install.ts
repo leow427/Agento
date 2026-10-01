@@ -1,5 +1,5 @@
-// Installs AgentFunnel as a macOS background process (a launchd agent) that starts at login and
-// shows up as "AgentFunnel" in Activity Monitor. node src/install.ts [--uninstall]
+// Installs Agento as a macOS background process (a launchd agent) that starts at login and
+// shows up as "Agento" in Activity Monitor. node src/install.ts [--uninstall]
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_PORT } from "./server.ts";
 
-export const LABEL = "com.terminalbuddy.agentfunnel";
+export const LABEL = "com.agento.service";
 const MAIN_TS = fileURLToPath(new URL("./main.ts", import.meta.url));
 
 export function nodeOk(version: string): boolean {
@@ -19,7 +19,7 @@ export function paths(home: string) {
   const dir = join(home, ".agentfunnel");
   return {
     dir,
-    link: join(dir, "bin", "AgentFunnel"),
+    link: join(dir, "bin", "Agento"),
     plist: join(home, "Library", "LaunchAgents", `${LABEL}.plist`),
     log: join(dir, "agentfunnel.log"),
     err: join(dir, "agentfunnel.err.log"),
@@ -77,16 +77,16 @@ async function main(argv: string[]) {
     bootout();
     rmSync(p.plist, { force: true });
     rmSync(p.link, { force: true });
-    console.log("AgentFunnel removed. Your settings in ~/.agentfunnel were kept.");
+    console.log("Agento removed. Your settings in ~/.agentfunnel were kept.");
     return;
   }
   if (!nodeOk(process.versions.node)) {
-    console.error(`AgentFunnel needs Node 22.18 or newer (this is ${process.versions.node}).`);
+    console.error(`Agento needs Node 22.18 or newer (this is ${process.versions.node}).`);
     process.exit(1);
   }
   mkdirSync(dirname(p.link), { recursive: true });
   rmSync(p.link, { force: true });
-  symlinkSync(process.execPath, p.link); // macOS names the process after the link: "AgentFunnel"
+  symlinkSync(process.execPath, p.link); // macOS names the process after the link: "Agento"
   mkdirSync(dirname(p.plist), { recursive: true });
   writeFileSync(p.plist, plistText({ link: p.link, mainTs: MAIN_TS, log: p.log, err: p.err }));
   bootout();
@@ -100,12 +100,12 @@ async function main(argv: string[]) {
     }
   }
   if (!(await healthy(`http://127.0.0.1:${DEFAULT_PORT}/health`, 5000))) {
-    console.error(`AgentFunnel didn't start. See ${p.err} and ${p.log}`);
+    console.error(`Agento didn't start. See ${p.err} and ${p.log}`);
     process.exit(1);
   }
   const url = `http://localhost:${DEFAULT_PORT}`;
   execFileSync("open", [url]);
-  console.log(`AgentFunnel is running and starts at login. Its page: ${url}`);
+  console.log(`Agento is running and starts at login. Its page: ${url}`);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

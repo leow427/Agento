@@ -1,4 +1,4 @@
-// AgentFunnel's page: polls /api/status every 2 s and redraws. Data from the lanyard (network
+// Agento's page: polls /api/status every 2 s and redraws. Data from the lanyard (network
 // names, project names) only ever goes in through textContent.
 import { COLOURS, colourOrder, sessionColours, ago, stateWords, addWarning, deleteWarning, tailscaleSteps } from "./logic.js";
 

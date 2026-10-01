@@ -109,7 +109,7 @@ export function startServer(opts: ServerOptions): Promise<Running> {
       panel.port = port;
       let dnsSd: ChildProcess | null = null;
       if (opts.bonjour !== false) {
-        dnsSd = spawn("dns-sd", ["-R", "AgentFunnel", SERVICE_TYPE, "local", String(port)], { stdio: "ignore" });
+        dnsSd = spawn("dns-sd", ["-R", "Agento", SERVICE_TYPE, "local", String(port)], { stdio: "ignore" });
         dnsSd.on("error", (e) => log(`bonjour unavailable: ${e.message}`));
       }
       resolve({

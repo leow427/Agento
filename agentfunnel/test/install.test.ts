@@ -17,8 +17,8 @@ test("nodeOk needs 22.18 or newer", () => {
 test("paths live in ~/.agentfunnel and ~/Library/LaunchAgents", () => {
   assert.deepEqual(paths("/Users/x"), {
     dir: "/Users/x/.agentfunnel",
-    link: "/Users/x/.agentfunnel/bin/AgentFunnel",
-    plist: "/Users/x/Library/LaunchAgents/com.terminalbuddy.agentfunnel.plist",
+    link: "/Users/x/.agentfunnel/bin/Agento",
+    plist: "/Users/x/Library/LaunchAgents/com.agento.service.plist",
     log: "/Users/x/.agentfunnel/agentfunnel.log",
     err: "/Users/x/.agentfunnel/agentfunnel.err.log",
   });
@@ -36,3 +36,5 @@ test("plistText is a valid launchd plist that runs main.ts through the link", ()
   writeFileSync(f, text);
   assert.match(execFileSync("plutil", ["-lint", f]).toString(), /OK/);
 });
+
+test("the service is called Agento", () => assert.equal(LABEL, "com.agento.service"));

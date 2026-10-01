@@ -82,3 +82,11 @@ test("the real page files are served", async () => {
     await srv.close();
   }
 });
+
+test("the page is called Agento", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(new URL("../ui/index.html", import.meta.url), "utf8");
+  assert.match(html, /<title>Agento<\/title>/);
+  assert.match(html, /<h1>Agento<\/h1>/);
+  assert.doesNotMatch(html, /AgentFunnel/);
+});
