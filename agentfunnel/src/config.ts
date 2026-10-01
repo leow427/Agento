@@ -29,10 +29,18 @@ export class Config {
   private ops: WifiOp[] = [];
   private readonly path: string | undefined;
   private readonly log: (m: string) => void;
+  private readonly now: () => number;
 
-  constructor(opts: { path?: string; log?: (m: string) => void } = {}) {
+  constructor(opts: { path?: string; log?: (m: string) => void; now?: () => number } = {}) {
     this.path = opts.path;
     this.log = opts.log ?? ((m) => console.warn(m));
+    this.now = opts.now ?? (() => Date.now() / 1000);
+  }
+
+  // With no usable config.json (first run, or it was lost), op ids start from the clock in seconds,
+  // so they stay above any id the lanyard has already applied (it remembers the last one in NVS).
+  private seedIds(): void {
+    this.nextOpId = Math.max(1, Math.floor(this.now()));
   }
 
   get running(): boolean {
@@ -110,6 +118,7 @@ export class Config {
       raw = readFileSync(this.path, "utf8");
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") this.log(`agentfunnel: cannot read config ${this.path}: ${e}`);
+      this.seedIds();
       return;
     }
     try {
@@ -125,6 +134,7 @@ export class Config {
       this.ops = d.wifiOps;
     } catch (e) {
       this.log(`agentfunnel: ignoring unreadable config ${this.path}: ${(e as Error).message}`);
+      this.seedIds();
     }
   }
 }

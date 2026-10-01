@@ -122,3 +122,18 @@ test("validateWifi matches the lanyard's rules, counting bytes", () => {
   assert.equal(validateWifi("add", 5, ""), "pick a network");
   assert.equal(validateWifi("add", "home", 5), "bad password");
 });
+
+test("after config.json is lost, new op ids start from the clock so they stay above what the lanyard applied", () => {
+  const path = tmpPath(); // no file yet: as if it was deleted
+  const c = new Config({ path, now: () => 1790000000.7 });
+  c.load();
+  const a = c.addWifi("add", "A", "");
+  const b = c.addWifi("add", "B", "");
+  assert.deepEqual([a.id, b.id], [1790000000, 1790000001]);
+  c.lanyardApplied(2); // the lanyard's applied id from before the loss
+  assert.deepEqual(c.pendingAfter(2).map((o) => o.ssid), ["A", "B"], "nothing dropped, all still delivered");
+  writeFileSync(path, "{corrupt");
+  const d = new Config({ path, now: () => 1790000500, log: () => {} });
+  d.load();
+  assert.equal(d.addWifi("delete", "C").id, 1790000500);
+});
