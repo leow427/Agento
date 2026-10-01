@@ -32,6 +32,7 @@ static std::atomic<uint32_t> since{0};  // 0 on boot: the Mac sends its full his
 static std::atomic<bool> down{true};
 static std::atomic<bool> setupRequested{false};
 static std::atomic<uint8_t> firstColour{0};
+static std::atomic<int> maxPct{100}, sleepPct{20};  // screen brightness, percent (defaults: full, 20%)
 static std::atomic<bool> stopped{false};  // AgentFunnel is switched off on the Mac
 static uint32_t applied = 0;              // last Wi-Fi change from the Mac we applied (NVS "applied")
 static BatteryReading batteryNow;         // guarded by `lock`
@@ -57,6 +58,10 @@ void netSetSince(uint32_t seq) { since = seq; }
 bool netDisconnected() { return down; }
 void netRequestSetup() { setupRequested = true; }
 uint8_t netFirstColour() { return firstColour; }
+void netBrightness(int& m, int& s) {
+  m = maxPct;
+  s = sleepPct;
+}
 
 void netSetBattery(const BatteryReading& b) {
   xSemaphoreTake(lock, portMAX_DELAY);
@@ -87,6 +92,11 @@ static void loadStore() {
   const uint8_t c = p.getUChar("colour", 0);
   firstColour = c < SLOT_COUNT ? c : 0;
   applied = p.getUInt("applied", 0);
+  const int bm = p.getUChar("bmax", 100), bs = p.getUChar("bsleep", 20);
+  if (bm >= 5 && bm <= 100 && bs >= 5 && bs <= bm) {
+    maxPct = bm;
+    sleepPct = bs;
+  }
   p.end();
   if (!store.deserialize(text.c_str())) Serial.println("wifi: saved networks unreadable; starting fresh");
   Serial.printf("wifi: %d saved network(s)%s\n", store.count(), *WIFI_SSID ? " + secrets.h" : "");
@@ -103,6 +113,14 @@ static void saveColour(uint8_t c) {
   Preferences p;
   p.begin("buddy", false);
   p.putUChar("colour", c);
+  p.end();
+}
+
+static void saveBrightness(int m, int s) {
+  Preferences p;
+  p.begin("buddy", false);
+  p.putUChar("bmax", m);
+  p.putUChar("bsleep", s);
   p.end();
 }
 
@@ -305,6 +323,12 @@ static void applyBits(const LanyardBits& b) {
     saveColour(b.colour);
     Serial.printf("config: colour %d\n", b.colour);
   }
+  if (b.maxBrightness >= 0 && (b.maxBrightness != maxPct || b.sleepBrightness != sleepPct)) {
+    maxPct = b.maxBrightness;
+    sleepPct = b.sleepBrightness;
+    saveBrightness(b.maxBrightness, b.sleepBrightness);
+    Serial.printf("config: brightness max %d%% sleep %d%%\n", b.maxBrightness, b.sleepBrightness);
+  }
   for (int i = 0; i < b.opCount; i++)
     if (b.ops[i].id > applied)
       Serial.printf("wifi op %lu: %s %s\n", (unsigned long)b.ops[i].id, opKindName(b.ops[i].kind), b.ops[i].ssid);
@@ -353,7 +377,7 @@ static void sendReport() {
   xSemaphoreTake(lock, portMAX_DELAY);
   b = batteryNow;
   xSemaphoreGive(lock);
-  const String body = reportJson(WiFi.SSID().c_str(), store, firstColour, b.present, b.charging, b.percent, applied).c_str();
+  const String body = reportJson(WiFi.SSID().c_str(), store, firstColour, b.present, b.charging, b.percent, applied, maxPct, sleepPct).c_str();
   if (body == lastReport && millis() - lastReportAt < 30000) return;
   HTTPClient http;
   http.setConnectTimeout(900);

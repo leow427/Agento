@@ -109,3 +109,20 @@ int batteryFillPx(int percent, int width) {
   const int px = percent * width / 100;
   return px < 1 ? 1 : px;
 }
+
+bool DimTimer::touch(uint32_t nowMs) {
+  const bool woke = dimmed(nowMs);
+  lastMs_ = nowMs;
+  return woke;
+}
+
+uint8_t DimTimer::levelFromPercent(int percent) { return (uint8_t)((percent * 255 + 50) / 100); }
+
+bool DimTimer::setPercents(int maxPercent, int sleepPercent) {
+  if (maxPercent < 5 || maxPercent > 100 || sleepPercent < 5 || sleepPercent > maxPercent) return false;
+  const uint8_t f = levelFromPercent(maxPercent), d = levelFromPercent(sleepPercent);
+  if (f == full_ && d == dim_) return false;
+  full_ = f;
+  dim_ = d;
+  return true;
+}

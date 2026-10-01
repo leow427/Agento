@@ -90,3 +90,9 @@ test("the page is called Agento", async () => {
   assert.match(html, /<h1>Agento<\/h1>/);
   assert.doesNotMatch(html, /AgentFunnel/);
 });
+
+test("fitBrightness keeps dimmed at or below awake", () => {
+  assert.deepEqual(L.fitBrightness(100, 20), { max: 100, sleep: 20 });
+  assert.deepEqual(L.fitBrightness(10, 20), { max: 10, sleep: 10 });
+  assert.deepEqual(L.fitBrightness(50, 50), { max: 50, sleep: 50 });
+});

@@ -147,6 +147,8 @@ bool parseLanyardBits(const char* json, size_t len, LanyardBits& out) {
   JsonDocument filter;
   filter["running"] = true;
   filter["config"]["colour"] = true;
+  filter["config"]["maxBrightness"] = true;
+  filter["config"]["sleepBrightness"] = true;
   JsonObject f = filter["wifi"].add<JsonObject>();
   f["id"] = true;
   f["op"] = true;
@@ -157,6 +159,11 @@ bool parseLanyardBits(const char* json, size_t len, LanyardBits& out) {
   out.running = doc["running"] | true;
   const int c = doc["config"]["colour"] | -1;
   out.colour = c >= 0 && c < COLOUR_COUNT ? c : -1;
+  const int bm = doc["config"]["maxBrightness"] | -1, bs = doc["config"]["sleepBrightness"] | -1;
+  if (bm >= 5 && bm <= 100 && bs >= 5 && bs <= bm) {
+    out.maxBrightness = bm;
+    out.sleepBrightness = bs;
+  }
   for (JsonObjectConst o : doc["wifi"].as<JsonArrayConst>()) {
     if (out.opCount >= MAX_OPS) break;
     WifiOp& w = out.ops[out.opCount++];
@@ -187,7 +194,7 @@ OpsResult applyWifiOps(CredStore& store, const WifiOp* ops, int n, uint32_t& app
 }
 
 std::string reportJson(const char* wifi, const CredStore& store, int colour, bool batteryPresent, bool charging,
-                       int percent, uint32_t applied) {
+                       int percent, uint32_t applied, int maxBrightness, int sleepBrightness) {
   JsonDocument doc;
   doc["wifi"] = wifi ? wifi : "";
   JsonArray nets = doc["nets"].to<JsonArray>();
@@ -198,6 +205,9 @@ std::string reportJson(const char* wifi, const CredStore& store, int colour, boo
   b["charging"] = charging;
   b["percent"] = percent;
   doc["applied"] = applied;
+  JsonObject br = doc["brightness"].to<JsonObject>();
+  br["max"] = maxBrightness;
+  br["sleep"] = sleepBrightness;
   std::string out;
   serializeJson(doc, out);
   return out;

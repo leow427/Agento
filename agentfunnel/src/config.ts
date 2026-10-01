@@ -5,6 +5,22 @@ import { dirname } from "node:path";
 
 export const COLOUR_COUNT = 6;
 
+// Screen brightness in percent: awake ("max") and after 30 s untouched ("sleep"). Defaults are the
+// lanyard's behaviour before this was adjustable.
+export const BRIGHTNESS_MIN = 5;
+export const BRIGHTNESS_MAX = 100;
+export const DEFAULT_BRIGHTNESS = { max: 100, sleep: 20 };
+export type Brightness = { max: number; sleep: number };
+
+// null = fine.
+export function validateBrightness(max: unknown, sleep: unknown): string | null {
+  for (const v of [max, sleep])
+    if (!Number.isInteger(v) || (v as number) < BRIGHTNESS_MIN || (v as number) > BRIGHTNESS_MAX)
+      return `brightness must be ${BRIGHTNESS_MIN}-${BRIGHTNESS_MAX}`;
+  if ((sleep as number) > (max as number)) return "sleep brightness can't be above max brightness";
+  return null;
+}
+
 export type WifiOp = { id: number; op: "add" | "delete"; ssid: string; pass?: string };
 export type PublicWifiOp = { id: number; op: "add" | "delete"; ssid: string };
 
@@ -25,6 +41,7 @@ export function validateWifi(op: unknown, ssid: unknown, pass: unknown): string 
 export class Config {
   private on = true;
   private first = 0;
+  private bright: Brightness = { ...DEFAULT_BRIGHTNESS };
   private nextOpId = 1;
   private ops: WifiOp[] = [];
   private readonly path: string | undefined;
@@ -48,6 +65,17 @@ export class Config {
   }
   get colour(): number {
     return this.first;
+  }
+
+  get brightness(): Brightness {
+    return { ...this.bright };
+  }
+
+  setBrightness(max: number, sleep: number): void {
+    const err = validateBrightness(max, sleep);
+    if (err !== null) throw new RangeError(err);
+    this.bright = { max, sleep };
+    this.save();
   }
 
   setRunning(on: boolean): void {
@@ -103,7 +131,7 @@ export class Config {
 
   save(): void {
     if (this.path === undefined) return;
-    const data = { running: this.on, colour: this.first, nextOpId: this.nextOpId, wifiOps: this.ops };
+    const data = { running: this.on, colour: this.first, brightness: this.bright, nextOpId: this.nextOpId, wifiOps: this.ops };
     mkdirSync(dirname(this.path), { recursive: true });
     const tmp = this.path + ".tmp";
     writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
@@ -130,6 +158,10 @@ export class Config {
         if (!Number.isInteger(o?.id) || validateWifi(o.op, o.ssid, o.pass) !== null) throw new Error("bad wifi op");
       this.on = d.running;
       this.first = d.colour;
+      // Absent in files from before brightness was adjustable: keep the defaults.
+      this.bright = d.brightness !== undefined && validateBrightness(d.brightness?.max, d.brightness?.sleep) === null
+        ? { max: d.brightness.max, sleep: d.brightness.sleep }
+        : { ...DEFAULT_BRIGHTNESS };
       this.nextOpId = d.nextOpId;
       this.ops = d.wifiOps;
     } catch (e) {

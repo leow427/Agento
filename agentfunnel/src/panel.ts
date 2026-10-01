@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Config } from "./config.ts";
-import { validateWifi } from "./config.ts";
+import { validateBrightness, validateWifi } from "./config.ts";
 import { readBody, send } from "./http.ts";
 import type { Lanyard } from "./lanyard.ts";
 import type { Store } from "./store.ts";
@@ -68,6 +68,7 @@ async function status(ctx: PanelCtx) {
   return {
     running: ctx.config.running,
     colour: ctx.config.colour,
+    brightness: ctx.config.brightness,
     lanyard: ctx.lanyard.view(),
     sessions: ctx.store.snapshot(0).sessions.map(({ project, state, slot }) => ({ project, state, slot })),
     wifiPending: ctx.config.pendingPublic(),
@@ -107,6 +108,12 @@ export async function servePanel(ctx: PanelCtx, req: IncomingMessage, res: Serve
         if (!Number.isInteger(b.colour) || (b.colour as number) < 0 || (b.colour as number) > 5) return send(res, 400, "colour must be 0-5");
         ctx.config.setColour(b.colour as number);
         return send(res, 204);
+      case "/api/brightness": {
+        const err = validateBrightness(b.max, b.sleep);
+        if (err !== null) return send(res, 400, err);
+        ctx.config.setBrightness(b.max as number, b.sleep as number);
+        return send(res, 204);
+      }
       case "/api/wifi": {
         const err = validateWifi(b.op, b.ssid, b.pass);
         if (err !== null) return send(res, 400, err);

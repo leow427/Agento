@@ -86,6 +86,7 @@ test("/api/status: running, colour, lanyard, sessions, pending wifi without pass
   let s = JSON.parse((await raw("GET", "/api/status")).text);
   assert.equal(s.running, true);
   assert.equal(s.colour, 0);
+  assert.deepEqual(s.brightness, { max: 100, sleep: 20 });
   assert.equal(s.lanyard, null);
   assert.deepEqual(s.sessions, [{ project: "Agento", state: "working", slot: 0 }]);
   assert.deepEqual(s.wifiPending, [{ id: 1, op: "add", ssid: "iPhone" }]);
@@ -94,6 +95,15 @@ test("/api/status: running, colour, lanyard, sessions, pending wifi without pass
   lanyard.seen();
   s = JSON.parse((await raw("GET", "/api/status")).text);
   assert.equal(typeof s.lanyard.lastSeen, "number");
+});
+
+test("POST /api/brightness validates and saves", async () => {
+  assert.equal((await api("/api/brightness", { max: 70, sleep: 15 })).status, 204);
+  assert.deepEqual(config.brightness, { max: 70, sleep: 15 });
+  for (const bad of [{ max: 70, sleep: 80 }, { max: 3, sleep: 3 }, { max: 101, sleep: 5 }, { max: "70", sleep: 10 }, { max: 70 }])
+    assert.equal((await api("/api/brightness", bad)).status, 400, JSON.stringify(bad));
+  assert.deepEqual(config.brightness, { max: 70, sleep: 15 });
+  config.setBrightness(100, 20);
 });
 
 test("POST /api/running, /api/colour, /api/wifi, /api/wifi/cancel", async () => {

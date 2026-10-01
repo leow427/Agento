@@ -136,6 +136,72 @@ void test_battery_low() {
   TEST_ASSERT_FALSE(batteryLow(16));
 }
 
+void test_dim_after_30s_of_no_touch() {
+  DimTimer d;
+  TEST_ASSERT_EQUAL(DimTimer::FULL, d.brightness(0));
+  TEST_ASSERT_EQUAL(DimTimer::FULL, d.brightness(29999));
+  TEST_ASSERT_EQUAL(DimTimer::DIM, d.brightness(30000));
+  TEST_ASSERT_EQUAL(DimTimer::DIM, d.brightness(600000));
+}
+
+void test_dim_level_is_20_percent() {
+  TEST_ASSERT_EQUAL(51, DimTimer::DIM);
+  TEST_ASSERT_EQUAL(255, DimTimer::FULL);
+  TEST_ASSERT_EQUAL(30000, DimTimer::DIM_AFTER_MS);
+}
+
+void test_touch_restarts_the_countdown() {
+  DimTimer d;
+  TEST_ASSERT_FALSE(d.touch(20000));
+  TEST_ASSERT_EQUAL(DimTimer::FULL, d.brightness(49999));
+  TEST_ASSERT_EQUAL(DimTimer::DIM, d.brightness(50000));
+}
+
+void test_touch_wakes_a_dimmed_screen_and_says_so() {
+  DimTimer d;
+  TEST_ASSERT_EQUAL(DimTimer::DIM, d.brightness(40000));
+  TEST_ASSERT_TRUE(d.touch(40000));
+  TEST_ASSERT_EQUAL(DimTimer::FULL, d.brightness(40000));
+  TEST_ASSERT_FALSE(d.touch(40100));  // a continuing touch doesn't "wake" again
+}
+
+void test_percent_levels() {
+  TEST_ASSERT_EQUAL(255, DimTimer::levelFromPercent(100));
+  TEST_ASSERT_EQUAL(51, DimTimer::levelFromPercent(20));
+  TEST_ASSERT_EQUAL(13, DimTimer::levelFromPercent(5));
+  TEST_ASSERT_EQUAL(128, DimTimer::levelFromPercent(50));
+}
+
+void test_set_percents_changes_both_levels() {
+  DimTimer d;
+  TEST_ASSERT_FALSE(d.setPercents(100, 20));  // the defaults: no change
+  TEST_ASSERT_TRUE(d.setPercents(60, 10));
+  TEST_ASSERT_EQUAL(153, d.brightness(0));
+  TEST_ASSERT_EQUAL(26, d.brightness(30000));
+  TEST_ASSERT_FALSE(d.setPercents(60, 10));
+  TEST_ASSERT_TRUE(d.setPercents(30, 30));  // dimmed may equal awake
+  TEST_ASSERT_EQUAL(77, d.brightness(0));
+  TEST_ASSERT_EQUAL(77, d.brightness(30000));
+}
+
+void test_set_percents_rejects_bad_values() {
+  DimTimer d;
+  d.setPercents(60, 10);
+  TEST_ASSERT_FALSE(d.setPercents(101, 10));
+  TEST_ASSERT_FALSE(d.setPercents(60, 4));
+  TEST_ASSERT_FALSE(d.setPercents(40, 50));
+  TEST_ASSERT_FALSE(d.setPercents(-1, -1));
+  TEST_ASSERT_EQUAL(153, d.brightness(0));
+  TEST_ASSERT_EQUAL(26, d.brightness(30000));
+}
+
+void test_dim_survives_millis_wraparound() {
+  DimTimer d;
+  d.touch(0xFFFFFFF0u);
+  TEST_ASSERT_EQUAL(DimTimer::FULL, d.brightness(10000));  // clock wrapped, 10 s later
+  TEST_ASSERT_EQUAL(DimTimer::DIM, d.brightness(30000));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_swipes_by_dominant_axis);
@@ -154,5 +220,13 @@ int main() {
   RUN_TEST(test_colour_rank_counts_visible_sessions_before);
   RUN_TEST(test_battery_fill_width);
   RUN_TEST(test_battery_low);
+  RUN_TEST(test_dim_after_30s_of_no_touch);
+  RUN_TEST(test_dim_level_is_20_percent);
+  RUN_TEST(test_touch_restarts_the_countdown);
+  RUN_TEST(test_touch_wakes_a_dimmed_screen_and_says_so);
+  RUN_TEST(test_percent_levels);
+  RUN_TEST(test_set_percents_changes_both_levels);
+  RUN_TEST(test_set_percents_rejects_bad_values);
+  RUN_TEST(test_dim_survives_millis_wraparound);
   return UNITY_END();
 }

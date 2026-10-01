@@ -1,6 +1,6 @@
 // Agento's page: polls /api/status every 2 s and redraws. Data from the lanyard (network
 // names, project names) only ever goes in through textContent.
-import { COLOURS, colourOrder, sessionColours, ago, stateWords, addWarning, deleteWarning, tailscaleSteps } from "./logic.js";
+import { COLOURS, colourOrder, fitBrightness, sessionColours, ago, stateWords, addWarning, deleteWarning, tailscaleSteps } from "./logic.js";
 
 const $ = (id) => document.getElementById(id);
 let status = null;
@@ -61,6 +61,7 @@ function render(s) {
   renderLanyard(s);
   renderSessions(s);
   renderColour(s);
+  renderBrightness(s);
   renderWifi(s);
   renderAway(s);
 }
@@ -93,6 +94,32 @@ function renderColour(s) {
     $("order").replaceChildren(...colourOrder(s.colour).map((c) => buddy(c, 58)));
   }
   $("colour-wait").hidden = s.lanyard?.colour === s.colour;
+}
+
+// Sliders follow the saved value, except while the user is dragging one.
+let dragging = false;
+function renderBrightness(s) {
+  const b = s.brightness;
+  if (!dragging) {
+    $("max").value = b.max;
+    $("sleep").value = b.sleep;
+    showBrightness();
+  }
+  const l = s.lanyard?.brightness;
+  $("brightness-wait").hidden = !!l && l.max === b.max && l.sleep === b.sleep;
+}
+
+function showBrightness() {
+  $("max-out").textContent = `${$("max").value}%`;
+  $("sleep-out").textContent = `${$("sleep").value}%`;
+}
+
+function sendBrightness() {
+  dragging = false;
+  const { max, sleep } = fitBrightness(Number($("max").value), Number($("sleep").value));
+  post("/api/brightness", { max, sleep })
+    .then(() => ($("brightness-error").textContent = ""))
+    .catch((err) => ($("brightness-error").textContent = err.message));
 }
 
 function renderWifi(s) {
@@ -154,6 +181,15 @@ function setup() {
       return b;
     }),
   );
+  for (const id of ["max", "sleep"]) {
+    $(id).oninput = () => {
+      dragging = true;
+      const f = fitBrightness(Number($("max").value), Number($("sleep").value));
+      $("sleep").value = f.sleep;
+      showBrightness();
+    };
+    $(id).onchange = sendBrightness;
+  }
   $("toggle").onclick = () => {
     if (status) post("/api/running", { running: !status.running }).catch(() => {});
   };
