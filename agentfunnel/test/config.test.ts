@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Config, validateWifi } from "../src/config.ts";
+import { Config, validateBrightness, validateWifi } from "../src/config.ts";
 
 const tmpPath = () => join(mkdtempSync(join(tmpdir(), "af-cfg-")), "config.json");
 
@@ -12,6 +12,40 @@ test("defaults: running, colour 0, nothing queued", () => {
   assert.equal(c.running, true);
   assert.equal(c.colour, 0);
   assert.deepEqual(c.pendingAfter(null), []);
+});
+
+test("brightness defaults to 100% awake, 20% asleep", () => {
+  assert.deepEqual(new Config().brightness, { max: 100, sleep: 20 });
+});
+
+test("setBrightness accepts 5-100 whole percents with sleep <= max", () => {
+  const c = new Config();
+  c.setBrightness(60, 10);
+  assert.deepEqual(c.brightness, { max: 60, sleep: 10 });
+  c.setBrightness(5, 5);
+  for (const [m, s] of [[4, 4], [101, 20], [50, 51], [50.5, 20], [50, NaN], ["50", 20]] as const)
+    assert.throws(() => c.setBrightness(m as number, s as number), RangeError);
+  assert.deepEqual(c.brightness, { max: 5, sleep: 5 });
+  assert.equal(validateBrightness(100, 100), null);
+});
+
+test("brightness is saved, and a file from before it existed loads with the defaults", () => {
+  const path = tmpPath();
+  const c = new Config({ path });
+  c.setBrightness(70, 30);
+  const d = new Config({ path });
+  d.load();
+  assert.deepEqual(d.brightness, { max: 70, sleep: 30 });
+  writeFileSync(path, '{"running":false,"colour":1,"nextOpId":5,"wifiOps":[]}');
+  const e = new Config({ path });
+  e.load();
+  assert.equal(e.running, false);
+  assert.equal(e.colour, 1);
+  assert.deepEqual(e.brightness, { max: 100, sleep: 20 });
+  writeFileSync(path, '{"running":true,"colour":1,"brightness":{"max":10,"sleep":50},"nextOpId":5,"wifiOps":[]}');
+  const f = new Config({ path });
+  f.load();
+  assert.deepEqual(f.brightness, { max: 100, sleep: 20 });
 });
 
 test("setColour accepts 0-5 only", () => {

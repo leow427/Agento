@@ -21,6 +21,12 @@ export function sessionColours(sessions, first) {
   return sessions.map((s) => (s.state === "ended" ? null : order[rank++ % order.length]));
 }
 
+// The dimmed level can't be above the awake level: dragging awake below it pulls it down, and
+// dragging dimmed above awake stops at awake.
+export function fitBrightness(max, sleep) {
+  return { max, sleep: Math.min(sleep, max) };
+}
+
 export function ago(lastSeen, now) {
   const d = Math.max(0, now - lastSeen);
   if (d < 5) return "just now";

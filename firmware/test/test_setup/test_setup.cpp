@@ -190,6 +190,23 @@ void test_parse_bits_bad_json_and_bad_colour() {
   TEST_ASSERT_EQUAL(-1, b.colour);
 }
 
+void test_parse_bits_reads_brightness() {
+  LanyardBits b;
+  const char* j = R"({"config":{"colour":1,"maxBrightness":80,"sleepBrightness":10}})";
+  TEST_ASSERT_TRUE(parseLanyardBits(j, strlen(j), b));
+  TEST_ASSERT_EQUAL(80, b.maxBrightness);
+  TEST_ASSERT_EQUAL(10, b.sleepBrightness);
+  // absent, out of range, or sleep above max: both ignored
+  for (const char* bad : {R"({"config":{"colour":1}})", R"({"config":{"maxBrightness":80}})",
+                          R"({"config":{"maxBrightness":101,"sleepBrightness":10}})",
+                          R"({"config":{"maxBrightness":50,"sleepBrightness":4}})",
+                          R"({"config":{"maxBrightness":50,"sleepBrightness":60}})"}) {
+    TEST_ASSERT_TRUE(parseLanyardBits(bad, strlen(bad), b));
+    TEST_ASSERT_EQUAL(-1, b.maxBrightness);
+    TEST_ASSERT_EQUAL(-1, b.sleepBrightness);
+  }
+}
+
 void test_parse_bits_caps_ops() {
   std::string j = R"({"wifi":[)";
   for (int i = 1; i <= 10; i++) j += std::string(i > 1 ? "," : "") + R"({"id":)" + std::to_string(i) + R"(,"op":"delete","ssid":"n"})";
@@ -287,7 +304,7 @@ void test_report_json_shape() {
   CredStore s;
   s.add("home", "password1");
   s.add("Cafe \"5G\"", "");
-  const std::string out = reportJson("home", s, 2, true, false, 81, 7);
+  const std::string out = reportJson("home", s, 2, true, false, 81, 7, 80, 15);
   TEST_ASSERT_EQUAL(std::string::npos, out.find("password1"));
   JsonDocument d;
   TEST_ASSERT_FALSE(deserializeJson(d, out));
@@ -300,6 +317,8 @@ void test_report_json_shape() {
   TEST_ASSERT_FALSE(d["battery"]["charging"].as<bool>());
   TEST_ASSERT_EQUAL(81, d["battery"]["percent"].as<int>());
   TEST_ASSERT_EQUAL_UINT32(7, d["applied"].as<uint32_t>());
+  TEST_ASSERT_EQUAL(80, d["brightness"]["max"].as<int>());
+  TEST_ASSERT_EQUAL(15, d["brightness"]["sleep"].as<int>());
 }
 
 int main() {
@@ -320,6 +339,7 @@ int main() {
   RUN_TEST(test_parse_bits_reads_running_colour_and_ops);
   RUN_TEST(test_parse_bits_v1_response_defaults);
   RUN_TEST(test_parse_bits_bad_json_and_bad_colour);
+  RUN_TEST(test_parse_bits_reads_brightness);
   RUN_TEST(test_parse_bits_caps_ops);
   RUN_TEST(test_parse_bits_keeps_special_ssids_and_rejects_overlong);
   RUN_TEST(test_apply_ops_add_delete_and_applied);

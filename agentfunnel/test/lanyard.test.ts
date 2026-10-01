@@ -16,6 +16,13 @@ test("parseReport accepts a full report and rejects bad shapes", () => {
     assert.equal(parseReport(bad), null, JSON.stringify(bad));
 });
 
+test("parseReport keeps a valid brightness and drops a bad one", () => {
+  const b = { max: 80, sleep: 20 };
+  assert.deepEqual(parseReport({ ...report, brightness: b }), { ...report, brightness: b });
+  assert.deepEqual(parseReport({ ...report, brightness: { max: 10, sleep: 50 } }), report);
+  assert.deepEqual(parseReport({ ...report, brightness: "x" }), report);
+});
+
 test("Lanyard: view is null until seen; seen and report update lastSeen", () => {
   let t = 100;
   const l = new Lanyard(() => t);
@@ -50,7 +57,10 @@ test("/state carries running, config and pending wifi", async () => {
   config.addWifi("add", "iPhone", "password1");
   const s = await state("?since=0");
   assert.equal(s.running, true);
-  assert.deepEqual(s.config, { colour: 3 });
+  assert.deepEqual(s.config, { colour: 3, maxBrightness: 100, sleepBrightness: 20 });
+  config.setBrightness(80, 10);
+  assert.deepEqual((await state("?since=0")).config, { colour: 3, maxBrightness: 80, sleepBrightness: 10 });
+  config.setBrightness(100, 20);
   assert.deepEqual(s.wifi, [{ id: 1, op: "add", ssid: "iPhone", pass: "password1" }]);
 });
 
@@ -83,7 +93,7 @@ test("off: no sessions, but config and wifi still flow", async () => {
   assert.equal(off.running, false);
   assert.deepEqual(off.sessions, []);
   assert.deepEqual(off.messages, []);
-  assert.deepEqual(off.config, { colour: 3 });
+  assert.deepEqual(off.config, { colour: 3, maxBrightness: 100, sleepBrightness: 20 });
   assert.deepEqual(off.wifi.map((o: { ssid: string }) => o.ssid), ["old"]);
   assert.equal((await postLanyard({ ...report, applied: 2 })).status, 204);
   config.setRunning(true);

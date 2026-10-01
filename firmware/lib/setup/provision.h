@@ -76,6 +76,7 @@ constexpr int MAX_OPS = 8;  // per poll; the rest arrive on the next one
 struct LanyardBits {
   bool running = true;  // false: AgentFunnel is switched off on the Mac
   int colour = -1;      // the first character colour 0-5, or -1 if absent
+  int maxBrightness = -1, sleepBrightness = -1;  // percent (5-100, sleep <= max), both -1 if absent or invalid
   WifiOp ops[MAX_OPS] = {};
   int opCount = 0;
 };
@@ -92,4 +93,4 @@ OpsResult applyWifiOps(CredStore& store, const WifiOp* ops, int n, uint32_t& app
 
 // Body of POST /lanyard. Network names only, never passwords.
 std::string reportJson(const char* wifi, const CredStore& store, int colour, bool batteryPresent, bool charging,
-                       int percent, uint32_t applied);
+                       int percent, uint32_t applied, int maxBrightness, int sleepBrightness);

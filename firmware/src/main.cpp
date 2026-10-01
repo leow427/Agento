@@ -31,6 +31,8 @@ static Director directors[MAX_SESSIONS];  // indexed by slot
 static Director nobody;                    // the idle buddy shown when there are no sessions (first colour)
 static Player disconnectedPlayer;
 static SwipeDetector swipes;
+static DimTimer dimTimer;       // dims the panel after 30 s without a touch
+static int appliedBrightness = -1;
 
 enum class Screen : uint8_t { Main, Messages, Disconnected, Setup };
 static const char* screenName(Screen s) {
@@ -304,13 +306,15 @@ static void initTouch() {
 }
 
 // The controller pulses INT while a finger is down; a quiet INT line means the finger lifted.
-static Swipe pollTouch(uint32_t now) {
+// `touched` is set while any finger is on the glass (a tap included); `lifted` when it comes off.
+static Swipe pollTouch(uint32_t now, bool& touched, bool& lifted) {
   static uint32_t lastIrq = 0, lastRead = 0;
   static bool down = false;
   if (!touchOk) return Swipe::None;
   if (touchIrq) {
     touchIrq = false;
     lastIrq = now;
+    touched = true;
     if (now - lastRead >= 10) {
       lastRead = now;
       int16_t x[2], y[2];
@@ -322,6 +326,7 @@ static Swipe pollTouch(uint32_t now) {
   }
   if (down && now - lastIrq > 80) {
     down = false;
+    lifted = true;
     return swipes.feed(false, 0, 0, now);
   }
   return Swipe::None;
@@ -338,7 +343,8 @@ void setup() {
     Serial.println("gfx->begin() failed");
     while (true) delay(1000);
   }
-  gfx->setBrightness(128);
+  gfx->setBrightness(DimTimer::FULL);
+  appliedBrightness = DimTimer::FULL;  // the loop applies the saved level on its first pass
   clearScreen();
   Serial.println("display ready");
   initTouch();
@@ -378,9 +384,20 @@ void loop() {
     bootFired = false;
   }
 
-  const Swipe sw = pollTouch(now);
+  bool touched = false, lifted = false;
+  const Swipe sw = pollTouch(now, touched, lifted);
+  // The touch that wakes a dimmed screen only wakes it: its swipe (if any) is not acted on.
+  static bool wakeTouch = false;
+  if (touched && dimTimer.touch(now)) {
+    wakeTouch = true;
+    Serial.println("touch: waking display");
+  }
+  const bool swallow = wakeTouch;
+  if (lifted) wakeTouch = false;
   if (sw != Swipe::None) {
-    Serial.printf("swipe %s\n", swipeName(sw));
+    Serial.printf("swipe %s%s\n", swipeName(sw), swallow ? " (ignored: woke the display)" : "");
+  }
+  if (sw != Swipe::None && !swallow) {
     if ((sw == Swipe::Left || sw == Swipe::Right) && screen == Screen::Main) {
       // left = previous session, right = next
       const int i = stepSelection(model.count(), selectedIndex(), sw == Swipe::Right ? +1 : -1, visibleAt, nullptr);
@@ -466,6 +483,18 @@ void loop() {
     }
   }
   redrawAll = false;
+
+  int maxPct, sleepPct;
+  netBrightness(maxPct, sleepPct);
+  dimTimer.setPercents(maxPct, sleepPct);
+  // Wi-Fi setup is read off the screen (and a QR code scanned), so it never dims.
+  if (screen == Screen::Setup) dimTimer.touch(now);
+  const uint8_t level = dimTimer.brightness(now);
+  if (level != appliedBrightness) {
+    gfx->setBrightness(level);
+    appliedBrightness = level;
+    Serial.printf("display: %s (brightness %u)\n", dimTimer.dimmed(now) ? "dimmed" : "awake", level);
+  }
 
   static uint32_t lastBattery = 0;
   if (now - lastBattery >= 30000) {

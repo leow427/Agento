@@ -42,3 +42,25 @@ int colourRank(int i, bool (*visible)(int i, void* ctx), void* ctx);
 // Battery icon: width of the charge fill inside an interior `width` px wide, and whether it's low.
 int batteryFillPx(int percent, int width);
 inline bool batteryLow(int percent) { return percent <= 15; }
+
+// Dims the panel after a stretch with no touch; any touch brings it back.
+class DimTimer {
+ public:
+  static constexpr uint32_t DIM_AFTER_MS = 30000;
+  static constexpr uint8_t FULL = 255;  // 100% of the panel's range (the default awake level)
+  static constexpr uint8_t DIM = 51;    // 20% (the default dimmed level)
+  // Panel level (0-255) for a percentage, rounded: 100 -> 255, 20 -> 51.
+  static uint8_t levelFromPercent(int percent);
+  // Awake and dimmed levels in percent (the Mac's page sets them; each 5-100, dimmed <= awake).
+  // Anything else is ignored. Returns true if the levels changed.
+  bool setPercents(int maxPercent, int sleepPercent);
+  // A touch (or anything that should count as one) restarts the countdown.
+  // Returns true if the screen was dimmed, i.e. this touch woke it.
+  bool touch(uint32_t nowMs);
+  bool dimmed(uint32_t nowMs) const { return nowMs - lastMs_ >= DIM_AFTER_MS; }
+  uint8_t brightness(uint32_t nowMs) const { return dimmed(nowMs) ? dim_ : full_; }
+
+ private:
+  uint32_t lastMs_ = 0;  // boot counts as activity
+  uint8_t full_ = FULL, dim_ = DIM;
+};

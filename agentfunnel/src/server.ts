@@ -61,7 +61,7 @@ async function handle(ctx: Ctx, req: IncomingMessage, res: ServerResponse) {
     const snap = store.snapshot(Number.isFinite(since) ? since : 0);
     // Off: the lanyard shows disconnected and keeps its sessions, but settings still reach it.
     const body = config.running ? { ...snap, running: true } : { seq: snap.seq, sessions: [], messages: [], running: false };
-    const out = { ...body, config: { colour: config.colour }, wifi: config.pendingAfter(lanyard.applied()) };
+    const out = { ...body, config: { colour: config.colour, maxBrightness: config.brightness.max, sleepBrightness: config.brightness.sleep }, wifi: config.pendingAfter(lanyard.applied()) };
     return send(res, 200, JSON.stringify(out), "application/json");
   }
   if (req.method === "POST" && url.pathname === "/lanyard") {

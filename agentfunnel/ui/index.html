@@ -39,6 +39,14 @@
       <div id="order" aria-label="colour order"></div>
       <p id="colour-wait" class="wait" hidden>waiting for lanyard…</p>
     </section>
+    <section id="brightness" class="wide">
+      <h2>Screen brightness</h2>
+      <p class="muted">The lanyard dims after 30 seconds without a touch, and any touch wakes it.</p>
+      <div class="slider"><label for="max">awake</label><input id="max" type="range" min="5" max="100" step="5"><output id="max-out"></output></div>
+      <div class="slider"><label for="sleep">dimmed</label><input id="sleep" type="range" min="5" max="100" step="5"><output id="sleep-out"></output></div>
+      <p id="brightness-error" class="error"></p>
+      <p id="brightness-wait" class="wait" hidden>waiting for lanyard…</p>
+    </section>
     <section id="wifi">
       <h2>Lanyard Wi-Fi</h2>
       <p id="wifi-note" class="muted"></p>
