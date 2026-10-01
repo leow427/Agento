@@ -57,3 +57,13 @@ test("the real runner times out instead of hanging", async () => {
   assert.deepEqual(await c.status(), { step: "not_running" });
   assert.ok(Date.now() - t0 < 3500);
 });
+
+test("the real runner forces CLI mode (the Mac app binary otherwise starts as the app under launchd)", async () => {
+  const { mkdtempSync, writeFileSync, chmodSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const cli = join(mkdtempSync(join(tmpdir(), "af-ts-")), "tailscale");
+  writeFileSync(cli, `#!/bin/sh\n[ "$TAILSCALE_BE_CLI" = 1 ] || exit 1\necho '{"BackendState":"Running","Self":{"CapMap":{"funnel":null}}}'\n`);
+  chmodSync(cli, 0o755);
+  assert.equal((await new TailscaleCheck({ find: () => cli }).status()).step, "ready");
+});

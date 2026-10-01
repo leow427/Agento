@@ -36,9 +36,12 @@ export function stepFromStatus(json: unknown): TsStatus {
   return out;
 }
 
+// The Mac app's binary only acts as the CLI when started from a shell (it checks SHLVL); under
+// launchd it would start as the app and hang. TAILSCALE_BE_CLI forces CLI mode.
 const execRunner: Runner = (cli, args, timeoutMs) =>
   new Promise((resolve) => {
-    execFile(cli, args, { timeout: timeoutMs }, (err, stdout) => resolve({ ok: !err, stdout: String(stdout) }));
+    const env = { ...process.env, TAILSCALE_BE_CLI: "1" };
+    execFile(cli, args, { timeout: timeoutMs, env }, (err, stdout) => resolve({ ok: !err, stdout: String(stdout) }));
   });
 
 export class TailscaleCheck {
